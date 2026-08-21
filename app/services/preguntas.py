@@ -10,13 +10,46 @@ from app.llm.prompts import prompt_preguntas
 from app.models import LotePreguntas, Nivel
 
 _VALLA = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$")
+# Escapes JSON que respetamos tal cual. Deliberadamente NO incluye \f ni \b:
+# en apuntes, "\frac" y "\beta" son LaTeX constante, mientras que un form feed
+# o un backspace literales no tienen ningun uso legitimo en este contenido.
+_ESCAPES_RESPETADOS = '"/nrtu'
+
+
+def reparar_latex(texto: str) -> str:
+    """Dobla las barras que el modelo dejo sin escapar dentro del JSON.
+
+    Los modelos escriben LaTeX crudo ("$\\Omega$", "$\\frac{a}{b}$") dentro de
+    las cadenas JSON. Unas veces es JSON invalido y otras, peor todavia, es
+    valido pero se decodifica a un caracter de control. Un "\\\\" ya correcto
+    se copia intacto, de modo que aplicarlo a JSON bien formado no lo altera.
+    """
+    salida: list[str] = []
+    i = 0
+    while i < len(texto):
+        c = texto[i]
+        if c == "\\" and i + 1 < len(texto):
+            siguiente = texto[i + 1]
+            if siguiente == "\\" or siguiente in _ESCAPES_RESPETADOS:
+                salida.append(texto[i : i + 2])
+            else:
+                salida.append("\\\\" + siguiente)
+            i += 2
+        else:
+            salida.append(c)
+            i += 1
+    return "".join(salida)
 
 
 def parsear_lote(texto: str) -> LotePreguntas:
-    limpio = _VALLA.sub("", texto.strip())
+    limpio = reparar_latex(_VALLA.sub("", texto.strip()))
     try:
-        return LotePreguntas(**json.loads(limpio))
-    except (json.JSONDecodeError, ValidationError, TypeError) as exc:
+        datos = json.loads(limpio)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"JSON de preguntas invalido: {exc}") from exc
+    try:
+        return LotePreguntas(**datos)
+    except (ValidationError, TypeError) as exc:
         raise ValueError(f"JSON de preguntas invalido: {exc}") from exc
 
 

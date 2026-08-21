@@ -1,0 +1,16 @@
+{
+  "name": "Estudia",
+  "short_name": "Estudia",
+  "description": "Tus apuntes convertidos en resumenes y examenes",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1b1d21",
+  "theme_color": "#1b1d21",
+  "lang": "es",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

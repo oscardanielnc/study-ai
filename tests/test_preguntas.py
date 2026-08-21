@@ -70,3 +70,35 @@ def test_falla_si_el_reintento_tambien_es_invalido(con):
     fake = FakeLLMClient(["nada", "tampoco"])
     with pytest.raises(ValueError):
         generar_lote(con, fake, "m", 1, "facil", n=1)
+
+
+def test_repara_latex_con_barras_sin_escapar():
+    # Los modelos escriben LaTeX crudo dentro del JSON sin doblar la barra.
+    # Es JSON invalido, pero en material de matematicas pasa constantemente.
+    crudo = (
+        r'{"preguntas":[{"enunciado":"Unidad de resistencia?",'
+        r'"opciones":["Ohmio","Voltio","Amperio","Vatio"],"correcta_idx":0,'
+        r'"justificacion":"Es el ohmio, $\Omega$, con $\frac{V}{I}$."}]}'
+    )
+    lote = parsear_lote(crudo)
+    assert (
+        lote.preguntas[0].justificacion
+        == r"Es el ohmio, $\Omega$, con $\frac{V}{I}$."
+    )
+
+
+def test_no_rompe_el_json_ya_bien_escapado():
+    # Aqui el JSON es correcto: \n es un salto real y \\alpha una barra literal.
+    bien = (
+        r'{"preguntas":[{"enunciado":"Formula?",'
+        r'"opciones":["a","b","c","d"],"correcta_idx":0,'
+        r'"justificacion":"Salto real:\nsegunda linea y $\\alpha$"}]}'
+    )
+    lote = parsear_lote(bien)
+    assert "\n" in lote.preguntas[0].justificacion
+    assert r"$\alpha$" in lote.preguntas[0].justificacion
+
+
+def test_sigue_fallando_con_basura_que_no_es_json():
+    with pytest.raises(ValueError):
+        parsear_lote("lo siento, no puedo generar preguntas")

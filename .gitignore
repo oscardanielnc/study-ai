@@ -7,3 +7,4 @@ data/
 *.db-shm
 .venv/
 node_modules/
+spike-resultados/
