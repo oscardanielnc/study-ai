@@ -30,3 +30,20 @@ def test_es_digital_false_con_pdf_escaneado():
 def test_extraer_texto_lanza_ante_datos_corruptos():
     with pytest.raises(ValueError):
         extraer_texto(b"esto no es un pdf")
+
+
+def test_rasterizar_devuelve_una_imagen_por_pagina():
+    from PIL import Image
+
+    from app.ingest.pdfs import rasterizar
+
+    paginas = rasterizar(_pdf_vacio(3))
+    assert len(paginas) == 3
+    assert Image.open(io.BytesIO(paginas[0])).format == "PNG"
+
+
+def test_rasterizar_lanza_ante_datos_corruptos():
+    from app.ingest.pdfs import rasterizar
+
+    with pytest.raises(ValueError):
+        rasterizar(b"no soy un pdf")
