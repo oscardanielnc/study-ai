@@ -27,6 +27,6 @@ def app() -> FastAPI:
     settings = get_settings()
     return crear_app(
         conectar(settings.db_path),
-        OpenRouterClient(settings.openrouter_api_key),
+        OpenRouterClient(settings.openrouter_api_key, base_url=settings.llm_base_url),
         settings,
     )

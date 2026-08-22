@@ -57,3 +57,31 @@ def test_una_respuesta_sin_choices_se_convierte_en_llmerror():
     cliente = _cliente(lambda req: httpx.Response(200, json={}))
     with pytest.raises(LLMError):
         cliente.completar(modelo="m", sistema="s", usuario="u")
+
+
+def test_por_defecto_apunta_a_openrouter():
+    capturado = {}
+
+    def handler(req):
+        capturado["url"] = str(req.url)
+        return httpx.Response(200, json=RESPUESTA_OK)
+
+    _cliente(handler).completar(modelo="m", sistema="s", usuario="u")
+    assert capturado["url"] == "https://openrouter.ai/api/v1/chat/completions"
+
+
+def test_acepta_otro_proveedor_compatible_con_openai():
+    """DeepSeek directo evita pagar el margen de OpenRouter."""
+    capturado = {}
+
+    def handler(req):
+        capturado["url"] = str(req.url)
+        return httpx.Response(200, json=RESPUESTA_OK)
+
+    cliente = OpenRouterClient(
+        "sk-test",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+        base_url="https://api.deepseek.com",
+    )
+    cliente.completar(modelo="m", sistema="s", usuario="u")
+    assert capturado["url"] == "https://api.deepseek.com/chat/completions"

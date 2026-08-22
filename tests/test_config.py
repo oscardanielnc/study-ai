@@ -12,6 +12,7 @@ def test_settings_lee_variables_de_entorno(monkeypatch):
 def test_settings_tiene_defaults_sensatos(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
     s = Settings()
-    assert s.modelo_preguntas == "deepseek/deepseek-v4-pro"
+    assert s.modelo_preguntas == "deepseek-v4-pro"
+    assert s.llm_base_url == "https://api.deepseek.com"
     assert s.tope_gasto_mensual_usd == 5.0
     assert s.db_path.endswith("estudia.db")

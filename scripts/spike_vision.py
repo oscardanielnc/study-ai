@@ -35,7 +35,8 @@ def main(carpeta: str) -> None:
         sys.exit(f"No encontre imagenes en {carpeta}")
     print(f"{len(fotos)} fotos x {len(CANDIDATOS)} modelos\n")
 
-    llm = OpenRouterClient(get_settings().openrouter_api_key)
+    s = get_settings()
+    llm = OpenRouterClient(s.openrouter_api_key, base_url=s.llm_base_url)
     salida = Path("spike-resultados")
     salida.mkdir(exist_ok=True)
     resumen: dict[str, dict] = {}

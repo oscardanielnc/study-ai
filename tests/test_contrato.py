@@ -31,9 +31,10 @@ def _imagen_con_texto() -> bytes:
 @pytest.fixture
 def cliente():
     key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not key.startswith("sk-or-"):
+    if not key.startswith("sk-"):
         pytest.skip("Requiere una OPENROUTER_API_KEY real")
-    return OpenRouterClient(key), Settings()
+    s = Settings()
+    return OpenRouterClient(key, base_url=s.llm_base_url), s
 
 
 def test_el_modelo_de_vision_acepta_imagenes(cliente):

@@ -4,15 +4,25 @@ import httpx
 
 from app.llm.client import LLMError, LLMResult
 
-URL = "https://openrouter.ai/api/v1/chat/completions"
+BASE_URL = "https://openrouter.ai/api/v1"
 
 
 class OpenRouterClient:
-    """Cliente de OpenRouter. La API es compatible con el formato de OpenAI."""
+    """Cliente para cualquier API con formato OpenAI.
 
-    def __init__(self, api_key: str, http: httpx.Client | None = None):
+    Por defecto habla con OpenRouter, pero `base_url` permite apuntar al
+    proveedor directo (p.ej. https://api.deepseek.com) y ahorrarse su margen.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        http: httpx.Client | None = None,
+        base_url: str = BASE_URL,
+    ):
         self._api_key = api_key
         self._http = http or httpx.Client(timeout=180.0)
+        self._url = f"{base_url.rstrip('/')}/chat/completions"
 
     def completar(
         self,
@@ -46,20 +56,20 @@ class OpenRouterClient:
         }
         try:
             resp = self._http.post(
-                URL,
+                self._url,
                 json=payload,
                 headers={"Authorization": f"Bearer {self._api_key}"},
             )
             resp.raise_for_status()
             datos = resp.json()
         except httpx.HTTPError as exc:
-            raise LLMError(f"OpenRouter fallo: {exc}") from exc
+            raise LLMError(f"El proveedor de IA fallo: {exc}") from exc
 
         try:
             texto = datos["choices"][0]["message"]["content"]
             uso = datos.get("usage", {})
         except (KeyError, IndexError, TypeError) as exc:
-            raise LLMError(f"Respuesta inesperada de OpenRouter: {datos}") from exc
+            raise LLMError(f"Respuesta inesperada del proveedor: {datos}") from exc
 
         return LLMResult(
             texto=texto,
