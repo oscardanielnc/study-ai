@@ -22,9 +22,14 @@ async function pintarGasto() {
 
 function renderizar(el) {
   renderMathInElement(el, {
+    // El modelo alterna entre los dos estilos: $...$ en las transcripciones y
+    // \(...\) en los resumenes. Sin ambos, la mitad de las formulas se
+    // renderiza como texto crudo.
     delimiters: [
       { left: "$$", right: "$$", display: true },
+      { left: "\\[", right: "\\]", display: true },
       { left: "$", right: "$", display: false },
+      { left: "\\(", right: "\\)", display: false },
     ],
     throwOnError: false,
   });

@@ -1,7 +1,10 @@
 """Compara modelos de vision sobre fotos reales.
 
 Uso:
-    python scripts/spike_vision.py ruta/a/carpeta_de_fotos
+    python scripts/spike_vision.py ruta/a/carpeta_de_fotos [modelo ...]
+
+Sin modelos usa el configurado en .env. Para comparar con modelos de otros
+fabricantes hay que apuntar LLM_BASE_URL a OpenRouter y tener saldo alli.
 
 Escribe una transcripcion por modelo en ./spike-resultados/ y una tabla
 comparativa de costo, tiempo y numero de marcas [?].
@@ -19,29 +22,24 @@ from app.llm.costs import calcular  # noqa: E402
 from app.llm.openrouter import OpenRouterClient  # noqa: E402
 from app.llm.prompts import TRANSCRIPCION  # noqa: E402
 
-CANDIDATOS = [
-    "deepseek/deepseek-v4-flash-vision-exp",
-    "anthropic/claude-haiku-4.5",
-    "anthropic/claude-sonnet-5",
-]
 EXTENSIONES = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
 
 
-def main(carpeta: str) -> None:
+def main(carpeta: str, candidatos: list[str]) -> None:
+    ajustes = get_settings()
     fotos = sorted(
         p for p in Path(carpeta).iterdir() if p.suffix.lower() in EXTENSIONES
     )
     if not fotos:
         sys.exit(f"No encontre imagenes en {carpeta}")
-    print(f"{len(fotos)} fotos x {len(CANDIDATOS)} modelos\n")
+    print(f"{len(fotos)} fotos x {len(candidatos)} modelos\n")
 
-    s = get_settings()
-    llm = OpenRouterClient(s.openrouter_api_key, base_url=s.llm_base_url)
+    llm = OpenRouterClient(ajustes.openrouter_api_key, base_url=ajustes.llm_base_url)
     salida = Path("spike-resultados")
     salida.mkdir(exist_ok=True)
     resumen: dict[str, dict] = {}
 
-    for modelo in CANDIDATOS:
+    for modelo in candidatos:
         costo = 0.0
         errores = 0
         t0 = time.time()
@@ -89,4 +87,5 @@ def main(carpeta: str) -> None:
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit("Falta la carpeta de fotos")
-    main(sys.argv[1])
+    modelos = sys.argv[2:] or [get_settings().modelo_transcripcion]
+    main(sys.argv[1], modelos)
