@@ -42,11 +42,21 @@ en `BackgroundTasks` con polling porque el túnel corta las peticiones HTTP a lo
 
 ## Pipeline de IA
 
+Proveedor: cualquier API con formato OpenAI (`LLM_BASE_URL`). Por defecto la de
+DeepSeek directo, que evita el margen de OpenRouter.
+
 | Paso | Modelo | Notas |
 |---|---|---|
-| Transcripción | `MODELO_TRANSCRIPCION` | Único paso que necesita visión |
+| Transcripción | `MODELO_TRANSCRIPCION` | Único paso con visión. Razonamiento **desactivado** |
 | Resumen | `MODELO_RESUMEN` | DeepSeek V4 Pro |
 | Preguntas | `MODELO_PREGUNTAS` | DeepSeek V4 Pro, lote de 20, perezoso |
+
+El modelo de visión razona por defecto y es capaz de gastar los 8000 tokens
+pensando, devolviendo texto vacío. Se le manda `thinking: disabled`: transcribir
+es copiar, no razonar. Sale más completo, 2,6× más barato y 2,4× más rápido.
+Una respuesta vacía es un error, nunca una fuente en blanco.
+
+Medido sobre 5 fotos reales de apuntes densos: **$0,0148** el tema completo.
 
 Ahorros aplicados: los PDFs digitales se extraen con `pypdf` (cero tokens), las
 imágenes se reescalan a 1100 px antes de enviarlas, y las llamadas derivadas
@@ -70,4 +80,9 @@ Compara los candidatos sobre material real y escribe `spike-resultados/`.
 docker compose up -d --build
 ```
 
-Escucha en `127.0.0.1:8083`. El hostname vive en `/etc/cloudflared/config.yml`.
+Escucha en `127.0.0.1:8083`. El hostname vive en `/etc/cloudflared/config.yml`
+y el acceso lo controla una app de Cloudflare Access.
+
+`~/backup-estudia.sh` en la VM copia la BD con la API `.backup` de SQLite
+(no `cp`: con WAL activo eso captura estados a medias) y conserva 7 días.
+Corre por cron a las 03:15 hora Lima.
