@@ -3,7 +3,7 @@
 Convierte apuntes de clase (fotos de pizarra, manuscrito, PDFs) en resúmenes
 estructurados y exámenes de opción múltiple en tres niveles.
 
-**Producción:** https://estudia.oscarnavarro.dev (tras Cloudflare Access)
+**Producción:** https://study.oscarnavarro.dev (tras Cloudflare Access)
 
 ## Desarrollo
 
