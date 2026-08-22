@@ -18,6 +18,9 @@ def transcribir_imagen(
         sistema=TRANSCRIPCION,
         usuario="Transcribe esta imagen.",
         imagenes=[reescalar(datos)],
+        # Transcribir es copiar, no razonar. Con el razonamiento activo este
+        # modelo gasta hasta el ultimo token pensando y devuelve texto vacio.
+        sin_razonamiento=True,
     )
     registrar(con, "transcripcion", resultado)
     return resultado.texto.strip()

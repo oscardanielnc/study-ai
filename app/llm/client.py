@@ -23,4 +23,5 @@ class LLMClient(Protocol):
         usuario: str,
         imagenes: list[bytes] | None = None,
         max_tokens: int = 8000,
+        sin_razonamiento: bool = False,
     ) -> LLMResult: ...

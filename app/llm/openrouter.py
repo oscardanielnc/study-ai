@@ -19,10 +19,12 @@ class OpenRouterClient:
         api_key: str,
         http: httpx.Client | None = None,
         base_url: str = BASE_URL,
+        sin_razonamiento: bool = False,
     ):
         self._api_key = api_key
-        self._http = http or httpx.Client(timeout=180.0)
+        self._http = http or httpx.Client(timeout=300.0)
         self._url = f"{base_url.rstrip('/')}/chat/completions"
+        self._sin_razonamiento = sin_razonamiento
 
     def completar(
         self,
@@ -32,6 +34,7 @@ class OpenRouterClient:
         usuario: str,
         imagenes: list[bytes] | None = None,
         max_tokens: int = 8000,
+        sin_razonamiento: bool = False,
     ) -> LLMResult:
         # Las imagenes van ANTES del texto y el texto variable al final:
         # asi el prefijo estable se puede cachear entre llamadas.
@@ -54,6 +57,10 @@ class OpenRouterClient:
                 {"role": "user", "content": partes},
             ],
         }
+        if sin_razonamiento or self._sin_razonamiento:
+            # Transcribir no requiere razonar y el modelo de vision es capaz de
+            # gastar el presupuesto entero pensando, dejando el texto vacio.
+            payload["thinking"] = {"type": "disabled"}
         try:
             resp = self._http.post(
                 self._url,
@@ -70,6 +77,13 @@ class OpenRouterClient:
             uso = datos.get("usage", {})
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError(f"Respuesta inesperada del proveedor: {datos}") from exc
+
+        if not (texto or "").strip():
+            raise LLMError(
+                "El modelo devolvio una respuesta vacia"
+                f" (finish_reason={datos['choices'][0].get('finish_reason')})."
+                " Suele ser que agoto max_tokens razonando."
+            )
 
         return LLMResult(
             texto=texto,

@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -85,3 +87,52 @@ def test_acepta_otro_proveedor_compatible_con_openai():
     )
     cliente.completar(modelo="m", sistema="s", usuario="u")
     assert capturado["url"] == "https://api.deepseek.com/chat/completions"
+
+
+def test_un_content_vacio_se_convierte_en_llmerror():
+    """El modelo de vision puede gastar todo el presupuesto razonando.
+
+    Si eso se colara como transcripcion vacia, el fallo seria invisible: las
+    imagenes originales ya se habrian borrado.
+    """
+    cliente = _cliente(
+        lambda req: httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": "", "reasoning_content": "mmm..."},
+                     "finish_reason": "length"}
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 8000},
+            },
+        )
+    )
+    with pytest.raises(LLMError, match="vacia"):
+        cliente.completar(modelo="m", sistema="s", usuario="u")
+
+
+def test_puede_pedir_que_el_modelo_no_razone():
+    capturado = {}
+
+    def handler(req):
+        capturado["body"] = req.read().decode()
+        return httpx.Response(200, json=RESPUESTA_OK)
+
+    OpenRouterClient(
+        "sk-test",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+        sin_razonamiento=True,
+    ).completar(modelo="m", sistema="s", usuario="u")
+    cuerpo = json.loads(capturado["body"])
+    assert cuerpo["thinking"] == {"type": "disabled"}
+
+
+def test_por_defecto_no_manda_el_flag_de_razonamiento():
+    capturado = {}
+
+    def handler(req):
+        capturado["body"] = req.read().decode()
+        return httpx.Response(200, json=RESPUESTA_OK)
+
+    _cliente(handler).completar(modelo="m", sistema="s", usuario="u")
+    assert "thinking" not in capturado["body"]
