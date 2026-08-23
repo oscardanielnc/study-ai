@@ -10,11 +10,18 @@ from app.llm.fake import FakeLLMClient
 from app.main import crear_app
 
 MD = "# Ley de Ohm\n\n## Puntos clave\n\n- $V=IR$\n"
-LOTE = (
-    '{"preguntas": [{"enunciado": "Unidad de resistencia?",'
+_UNA = (
+    '{"enunciado": "Unidad de resistencia?",'
     ' "opciones": ["Ohmio", "Voltio", "Amperio", "Vatio"],'
-    ' "correcta_idx": 0, "justificacion": "Es el ohmio."}]}'
+    ' "correcta_idx": 0, "justificacion": "Es el ohmio."}'
 )
+
+
+def _lote(n: int) -> str:
+    return '{"preguntas": [' + ", ".join([_UNA] * n) + "]}"
+
+
+LOTE = _lote(1)
 
 
 def _jpeg() -> bytes:
@@ -27,7 +34,7 @@ def _jpeg() -> bytes:
 def cliente(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
     con = conectar(str(tmp_path / "t.db"))
-    fake = FakeLLMClient(["Transcripcion", MD, LOTE])
+    fake = FakeLLMClient(["Transcripcion", MD] + [_lote(10)] * 6)
     app = crear_app(con, fake, Settings())
     return TestClient(app), con, fake
 
@@ -36,6 +43,16 @@ def _crear_tema(c) -> int:
     r = c.post("/api/temas", files={"archivos": ("a.jpg", _jpeg(), "image/jpeg")})
     assert r.status_code == 200, r.text
     return r.json()["tema_id"]
+
+
+def _examen(c, tema_id: int, nivel: str = "facil", cantidad: int = 5) -> dict:
+    """Pide un examen; si hace falta generar, espera al job y vuelve a pedirlo."""
+    cuerpo = {"nivel": nivel, "cantidad": cantidad}
+    r = c.post(f"/api/temas/{tema_id}/examenes", json=cuerpo).json()
+    if "job_id" in r:
+        assert c.get(f"/api/jobs/{r['job_id']}").json()["estado"] == "completado"
+        r = c.post(f"/api/temas/{tema_id}/examenes", json=cuerpo).json()
+    return r
 
 
 def test_crear_tema_procesa_y_devuelve_el_resumen(cliente):
@@ -59,30 +76,57 @@ def test_lista_temas_incluye_el_recien_creado(cliente):
     assert len(temas) == 1 and temas[0]["n_fuentes"] == 1
 
 
-def test_examen_genera_el_lote_perezosamente(cliente):
-    c, _, fake = cliente
+def test_sin_preguntas_el_examen_devuelve_un_job_en_vez_de_bloquear(cliente):
+    """Generar 40 preguntas tarda mas que el limite de 100 s del tunel."""
+    c, _, _ = cliente
     tema_id = _crear_tema(c)
-
-    llamadas_antes = len(fake.llamadas)
-    r = c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil"})
+    r = c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil", "cantidad": 20})
     assert r.status_code == 200, r.text
-    assert len(fake.llamadas) == llamadas_antes + 1
+    assert "job_id" in r.json() and "examen_id" not in r.json()
+
+
+def test_tras_generar_el_examen_trae_exactamente_la_cantidad_pedida(cliente):
+    c, _, _ = cliente
+    tema_id = _crear_tema(c)
+    job = c.post(
+        f"/api/temas/{tema_id}/examenes", json={"nivel": "facil", "cantidad": 20}
+    ).json()["job_id"]
+    assert c.get(f"/api/jobs/{job}").json()["estado"] == "completado"
+
+    r = c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil", "cantidad": 20})
+    assert r.status_code == 200, r.text
+    assert len(r.json()["preguntas"]) == 20
     assert "correcta_idx" not in r.json()["preguntas"][0]
 
 
-def test_segundo_examen_no_vuelve_a_llamar_al_modelo(cliente):
+def test_reutiliza_las_preguntas_no_vistas_antes_de_generar_mas(cliente):
+    """El ahorro de tokens: no se paga dos veces por lo que ya esta en la BD."""
     c, _, fake = cliente
     tema_id = _crear_tema(c)
-    c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil"})
+    c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil", "cantidad": 20})
     llamadas = len(fake.llamadas)
-    c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil"})
+
+    r = c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil", "cantidad": 5})
+    assert "examen_id" in r.json()
     assert len(fake.llamadas) == llamadas
+
+
+def test_solo_genera_las_que_faltan(cliente):
+    c, _, fake = cliente
+    tema_id = _crear_tema(c)
+    c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil", "cantidad": 10})
+    c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil", "cantidad": 10})
+    llamadas = len(fake.llamadas)
+
+    # Ya hay 10 sin ver... pero se acaban de consumir. Pedir 15 genera 15.
+    c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil", "cantidad": 15})
+    assert len(fake.llamadas) == llamadas + 2  # lotes de 10 y de 5
 
 
 def test_responder_y_finalizar(cliente):
     c, _, _ = cliente
     tema_id = _crear_tema(c)
-    ex = c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil"}).json()
+    ex = _examen(c, tema_id)
 
     r = c.post(
         f"/api/examenes/{ex['examen_id']}/respuestas",
@@ -106,7 +150,7 @@ def test_borrar_tema(cliente):
 def test_historial_registra_los_examenes_terminados(cliente):
     c, _, _ = cliente
     tema_id = _crear_tema(c)
-    ex = c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil"}).json()
+    ex = _examen(c, tema_id)
     c.post(
         f"/api/examenes/{ex['examen_id']}/respuestas",
         json={"pregunta_id": ex["preguntas"][0]["id"], "elegida_idx": 0},
@@ -121,7 +165,7 @@ def test_historial_registra_los_examenes_terminados(cliente):
 def test_historial_omite_examenes_sin_terminar(cliente):
     c, _, _ = cliente
     tema_id = _crear_tema(c)
-    c.post(f"/api/temas/{tema_id}/examenes", json={"nivel": "facil"})
+    _examen(c, tema_id)
     assert c.get(f"/api/temas/{tema_id}/examenes").json() == []
 
 

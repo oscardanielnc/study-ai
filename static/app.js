@@ -1,6 +1,11 @@
 const $ = (sel) => document.querySelector(sel);
 const app = () => $("#app");
-const ICONO_NIVEL = { facil: "🟢", intermedio: "🟡", dificil: "🔴" };
+const NIVELES = [
+  ["facil", "Fácil"],
+  ["intermedio", "Intermedio"],
+  ["dificil", "Difícil"],
+];
+const CANTIDADES = [10, 20, 30, 40];
 
 async function api(ruta, opciones = {}) {
   const r = await fetch(`/api${ruta}`, opciones);
@@ -9,6 +14,16 @@ async function api(ruta, opciones = {}) {
     throw new Error(cuerpo.detail || `Error ${r.status}`);
   }
   return r.status === 204 ? null : r.json();
+}
+
+function pintar(html, conBarra = false) {
+  app().className = conBarra ? "con-barra" : "";
+  app().innerHTML = html;
+}
+
+function fallo(mensaje, volver) {
+  pintar(`<p class="error">${mensaje}</p>
+    <button class="secundario" onclick="${volver}">← Volver</button>`);
 }
 
 async function pintarGasto() {
@@ -20,16 +35,23 @@ async function pintarGasto() {
   }
 }
 
+/** El modelo alterna entre $...$ y \(...\) para las formulas. Hay que pasarlo
+ *  todo a $ ANTES de marked: marked lee \( como un escape de markdown y deja
+ *  el parentesis pelado, asi que KaTeX no llegaria a ver nunca la formula. */
+function normalizarFormulas(md) {
+  const BS = String.fromCharCode(92);
+  return md
+    .split(BS + "[").join("$$")
+    .split(BS + "]").join("$$")
+    .split(BS + "(").join("$")
+    .split(BS + ")").join("$");
+}
+
 function renderizar(el) {
   renderMathInElement(el, {
-    // El modelo alterna entre los dos estilos: $...$ en las transcripciones y
-    // \(...\) en los resumenes. Sin ambos, la mitad de las formulas se
-    // renderiza como texto crudo.
     delimiters: [
       { left: "$$", right: "$$", display: true },
-      { left: "\\[", right: "\\]", display: true },
       { left: "$", right: "$", display: false },
-      { left: "\\(", right: "\\)", display: false },
     ],
     throwOnError: false,
   });
@@ -40,19 +62,24 @@ function renderizar(el) {
 async function vistaTemas() {
   location.hash = "";
   const temas = await api("/temas");
-  app().innerHTML = `
+  pintar(`
     <button onclick="nuevoTema()">+ Nuevo tema</button>
     <input type="file" id="archivos" multiple accept="image/*,.pdf" hidden>
-    ${temas.length === 0 ? "<p>Aún no tienes temas. Sube tus apuntes.</p>" : ""}
-    ${temas
-      .map(
-        (t) => `
+    ${
+      temas.length === 0
+        ? `<p class="vacio">Aún no tienes temas.<br>Sube fotos de tus apuntes para empezar.</p>`
+        : temas
+            .map(
+              (t) => `
       <div class="tarjeta" onclick="vistaTema(${t.id})">
         <h3>${t.titulo}</h3>
-        <small>${t.n_fuentes} archivo(s) · ${t.actualizado_en}</small>
+        <small>${t.n_fuentes} archivo${t.n_fuentes === 1 ? "" : "s"} · ${
+                t.actualizado_en
+              }</small>
       </div>`
-      )
-      .join("")}`;
+            )
+            .join("")
+    }`);
   pintarGasto();
 }
 
@@ -64,30 +91,29 @@ function nuevoTema() {
     for (const f of input.files) fd.append("archivos", f);
     try {
       const { tema_id, job_id } = await api("/temas", { method: "POST", body: fd });
-      seguirJob(job_id, tema_id);
+      seguirJob(job_id, "Procesando tus apuntes…", () => vistaTema(tema_id));
     } catch (e) {
-      app().innerHTML = `<p class="error">${e.message}</p>
-        <button class="secundario" onclick="vistaTemas()">← Volver</button>`;
+      fallo(e.message, "vistaTemas()");
     }
   };
   input.click();
 }
 
-async function seguirJob(jobId, temaId) {
-  app().innerHTML = `<p>Procesando tus apuntes…</p>
-    <div class="barra"><div id="pb" style="width:0%"></div></div>
-    <p id="pt" class="marcador"></p>`;
+/** Sondea un job hasta que termina. El tunel corta las peticiones a los 100 s:
+ *  nunca esperamos dentro de la misma peticion HTTP. */
+function seguirJob(jobId, titulo, alTerminar, alFallar) {
+  pintar(`<p>${titulo}</p>
+    <div class="progreso"><div id="pb" style="width:0%"></div></div>
+    <p id="pt" class="marcador"></p>`);
   const tic = async () => {
     const j = await api(`/jobs/${jobId}`);
     const pct = j.progreso_total ? (j.progreso_actual / j.progreso_total) * 100 : 0;
     $("#pb").style.width = `${pct}%`;
     $("#pt").textContent = `${j.progreso_actual} / ${j.progreso_total}`;
-    if (j.estado === "completado") return vistaTema(temaId);
+    if (j.estado === "completado") return alTerminar();
     if (j.estado === "fallido") {
-      app().innerHTML = `<p class="error">Falló: ${j.error}</p>
-        <button class="secundario" onclick="vistaTema(${temaId})">Ver tema igual</button>
-        <button class="secundario" onclick="vistaTemas()">← Temas</button>`;
-      return;
+      pintar(`<p class="error">Falló: ${j.error}</p>`);
+      return alFallar ? alFallar() : null;
     }
     setTimeout(tic, 2000);
   };
@@ -96,31 +122,62 @@ async function seguirJob(jobId, temaId) {
 
 // ---------- Vista de un tema ----------
 
+/** El modelo describe con [DIAGRAMA: ...] lo que no pudo reproducir. Se marca
+ *  aparte para que no se confunda con contenido realmente transcrito. */
+function marcarDiagramas(html) {
+  return html.replace(
+    /<p>\s*\[?DIAGRAMA:([^\]<]*)\]?\s*<\/p>/gi,
+    '<div class="diagrama">$1</div>'
+  );
+}
+
 async function vistaTema(id) {
   location.hash = `tema-${id}`;
-  const [t, hist] = await Promise.all([
-    api(`/temas/${id}`),
-    api(`/temas/${id}/examenes`),
-  ]);
-  app().innerHTML = `
-    <button class="secundario" onclick="vistaTemas()">← Temas</button>
+  let t, hist;
+  try {
+    [t, hist] = await Promise.all([api(`/temas/${id}`), api(`/temas/${id}/examenes`)]);
+  } catch (e) {
+    return fallo(e.message, "vistaTemas()");
+  }
+
+  pintar(
+    `
+    <button class="volver" onclick="vistaTemas()">← Temas</button>
     <div id="resumen"></div>
-    <button onclick="elegirNivel(${id})">📝 Tomar examen</button>
-    <button class="secundario" onclick="anadirMaterial(${id})">+ Añadir material</button>
-    <input type="file" id="mas" multiple accept="image/*,.pdf" hidden>
     ${
       hist.length
-        ? `<h2>Historial</h2>${hist
+        ? `<div class="historial"><h2>Historial</h2>${hist
             .map(
-              (e) => `<div class="marcador">${ICONO_NIVEL[e.nivel]} ${e.nivel} ·
-                ${e.aciertos}/${e.total} · ${e.terminado_en}</div>`
+              (e) => `<div class="fila">
+                <span>${e.nivel}</span>
+                <span class="puntaje">${e.aciertos}/${e.total}</span>
+              </div>`
             )
-            .join("")}`
+            .join("")}</div>`
         : ""
-    }`;
+    }
+    <div class="barra">
+      <button class="principal" onclick="configurarExamen(${id})">Tomar examen</button>
+      <button class="secundario" onclick="anadirMaterial(${id})">Añadir material</button>
+    </div>
+    <input type="file" id="mas" multiple accept="image/*,.pdf" hidden>`,
+    true
+  );
+
   const destino = $("#resumen");
-  destino.innerHTML = marked.parse(t.resumen_md || "_Sin resumen._");
+  destino.innerHTML = marcarDiagramas(
+    marked.parse(normalizarFormulas(t.resumen_md || "_Sin resumen._"))
+  );
+  // Las tablas anchas scrollean dentro de su caja; la pagina nunca se mueve
+  // en horizontal.
+  destino.querySelectorAll("table").forEach((tabla) => {
+    const caja = document.createElement("div");
+    caja.className = "tabla-scroll";
+    tabla.replaceWith(caja);
+    caja.appendChild(tabla);
+  });
   renderizar(destino);
+  pintarGasto();
 }
 
 function anadirMaterial(temaId) {
@@ -129,79 +186,127 @@ function anadirMaterial(temaId) {
     if (!input.files.length) return;
     const fd = new FormData();
     for (const f of input.files) fd.append("archivos", f);
-    const { job_id } = await api(`/temas/${temaId}/material`, {
-      method: "POST",
-      body: fd,
-    });
-    seguirJob(job_id, temaId);
+    try {
+      const { job_id } = await api(`/temas/${temaId}/material`, {
+        method: "POST",
+        body: fd,
+      });
+      seguirJob(job_id, "Procesando el material nuevo…", () => vistaTema(temaId));
+    } catch (e) {
+      fallo(e.message, `vistaTema(${temaId})`);
+    }
   };
   input.click();
 }
 
-function elegirNivel(temaId) {
-  app().innerHTML = `
-    <button class="secundario" onclick="vistaTema(${temaId})">← Volver</button>
-    <h2>Dificultad</h2>
-    <button onclick="vistaExamen(${temaId}, 'facil')">🟢 Fácil</button>
-    <button onclick="vistaExamen(${temaId}, 'intermedio')">🟡 Intermedio</button>
-    <button onclick="vistaExamen(${temaId}, 'dificil')">🔴 Difícil</button>
-    <p class="marcador">¿Ya te sabes las preguntas? Genera 20 nuevas:</p>
-    <button class="secundario" onclick="generarMas(${temaId}, 'facil')">+20 fáciles</button>
-    <button class="secundario" onclick="generarMas(${temaId}, 'intermedio')">+20 intermedias</button>
-    <button class="secundario" onclick="generarMas(${temaId}, 'dificil')">+20 difíciles</button>`;
+// ---------- Configurar examen ----------
+
+const elegido = { nivel: "intermedio", cantidad: 10 };
+
+function configurarExamen(temaId) {
+  const botones = (items, campo) =>
+    items
+      .map(
+        ([valor, texto]) =>
+          `<button class="elegible" data-campo="${campo}" data-valor="${valor}"
+             aria-pressed="${elegido[campo] == valor}">${texto}</button>`
+      )
+      .join("");
+
+  pintar(
+    `
+    <button class="volver" onclick="vistaTema(${temaId})">← Volver</button>
+    <h1>Configurar examen</h1>
+    <div class="grupo">
+      <h2>Nivel de dificultad</h2>
+      <div class="opciones-nivel">${botones(NIVELES, "nivel")}</div>
+    </div>
+    <div class="grupo">
+      <h2>Cantidad de preguntas</h2>
+      <div class="cantidades">${botones(
+        CANTIDADES.map((n) => [n, n]),
+        "cantidad"
+      )}</div>
+    </div>
+    <p class="aviso" id="aviso"></p>
+    <div class="barra">
+      <button class="principal" onclick="iniciarExamen(${temaId})">Iniciar examen</button>
+    </div>`,
+    true
+  );
+
+  const refrescarAviso = () => {
+    // Cota superior: si ya hay preguntas sin ver, no se genera nada.
+    const seg = Math.round((elegido.cantidad * 12) / 10) * 10;
+    $("#aviso").textContent = `Si hay que generarlas, tarda hasta ~${seg} s.`;
+  };
+  document.querySelectorAll(".elegible").forEach((b) => {
+    b.onclick = () => {
+      const campo = b.dataset.campo;
+      elegido[campo] = campo === "cantidad" ? Number(b.dataset.valor) : b.dataset.valor;
+      document
+        .querySelectorAll(`.elegible[data-campo="${campo}"]`)
+        .forEach((o) => o.setAttribute("aria-pressed", o === b));
+      refrescarAviso();
+    };
+  });
+  refrescarAviso();
 }
 
-async function generarMas(temaId, nivel) {
-  app().innerHTML = "<p>Generando preguntas nuevas…</p>";
+async function iniciarExamen(temaId) {
+  const peticion = {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(elegido),
+  };
+  let r;
   try {
-    const { generadas } = await api(`/temas/${temaId}/preguntas`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nivel }),
-    });
-    app().innerHTML = `<p>✅ ${generadas} preguntas añadidas al nivel ${nivel}.</p>
-      <button onclick="vistaExamen(${temaId}, '${nivel}')">Tomar examen</button>
-      <button class="secundario" onclick="vistaTema(${temaId})">← Volver</button>`;
+    r = await api(`/temas/${temaId}/examenes`, peticion);
   } catch (e) {
-    app().innerHTML = `<p class="error">${e.message}</p>
-      <button class="secundario" onclick="vistaTema(${temaId})">← Volver</button>`;
+    return fallo(e.message, `vistaTema(${temaId})`);
   }
-  pintarGasto();
+
+  if (r.examen_id) return vistaExamen(temaId, r);
+
+  const plural = r.faltan === 1 ? "" : "s";
+  seguirJob(
+    r.job_id,
+    `Preparando ${r.faltan} pregunta${plural} nueva${plural}…`,
+    async () => {
+      try {
+        vistaExamen(temaId, await api(`/temas/${temaId}/examenes`, peticion));
+      } catch (e) {
+        fallo(e.message, `vistaTema(${temaId})`);
+      }
+    }
+  );
 }
 
 // ---------- Examen ----------
 
-async function vistaExamen(temaId, nivel) {
-  app().innerHTML = "<p>Preparando el examen…</p>";
-  let ex;
-  try {
-    ex = await api(`/temas/${temaId}/examenes`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nivel }),
-    });
-  } catch (e) {
-    app().innerHTML = `<p class="error">${e.message}</p>
-      <button class="secundario" onclick="vistaTema(${temaId})">← Volver</button>`;
-    return;
-  }
-
+function vistaExamen(temaId, ex) {
   let i = 0;
   let aciertos = 0;
   const total = ex.preguntas.length;
 
-  const pintar = () => {
+  const pregunta = () => {
     const p = ex.preguntas[i];
-    app().innerHTML = `
-      <div class="marcador">Pregunta ${i + 1}/${total} · ✅ ${aciertos} · ❌ ${
-      i - aciertos
-    }</div>
-      <div class="barra"><div style="width:${(i / total) * 100}%"></div></div>
-      <h3 id="enunciado">${p.enunciado}</h3>
+    pintar(`
+      <div class="marcador">
+        <span>Pregunta ${i + 1}/${total}</span>
+        <span><span class="aciertos">✓ ${aciertos}</span>
+          &nbsp;<span class="fallos">✕ ${i - aciertos}</span></span>
+      </div>
+      <div class="progreso"><div style="width:${(i / total) * 100}%"></div></div>
+      <div class="enunciado">${p.enunciado}</div>
       <div id="opciones">${p.opciones
-        .map((o, k) => `<button class="opcion" data-k="${k}">${o}</button>`)
+        .map(
+          (o, k) =>
+            `<button class="opcion" data-k="${k}"><span>${o}</span>
+               <span class="marca"></span></button>`
+        )
         .join("")}</div>
-      <div id="feedback"></div>`;
+      <div id="feedback"></div>`);
     renderizar(app());
     document.querySelectorAll(".opcion").forEach((b) => {
       b.onclick = () => marcar(p, Number(b.dataset.k));
@@ -209,40 +314,57 @@ async function vistaExamen(temaId, nivel) {
   };
 
   const marcar = async (p, k) => {
-    document.querySelectorAll(".opcion").forEach((b) => (b.disabled = true));
-    const r = await api(`/examenes/${ex.examen_id}/respuestas`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pregunta_id: p.id, elegida_idx: k }),
-    });
-    if (r.correcta) aciertos++;
-    document
-      .querySelector(`.opcion[data-k="${r.correcta_idx}"]`)
-      .classList.add("correcta");
-    if (!r.correcta) {
-      document.querySelector(`.opcion[data-k="${k}"]`).classList.add("incorrecta");
+    const opciones = [...document.querySelectorAll(".opcion")];
+    opciones.forEach((b) => (b.disabled = true));
+    let r;
+    try {
+      r = await api(`/examenes/${ex.examen_id}/respuestas`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pregunta_id: p.id, elegida_idx: k }),
+      });
+    } catch (e) {
+      return fallo(e.message, `vistaTema(${temaId})`);
     }
+    if (r.correcta) aciertos++;
+
+    // El acierto y el fallo nunca dependen solo del color: llevan icono propio.
+    opciones.forEach((b) => {
+      const n = Number(b.dataset.k);
+      if (n === r.correcta_idx) {
+        b.classList.add("buena");
+        b.querySelector(".marca").textContent = "✓";
+      } else if (n === k) {
+        b.classList.add("mala");
+        b.querySelector(".marca").textContent = "✕";
+      } else {
+        b.classList.add("apagada");
+      }
+    });
+
     const fb = $("#feedback");
-    fb.innerHTML = `<div class="justificacion">${r.justificacion}</div>
-      <button id="sig">${i + 1 < total ? "Siguiente →" : "Ver resultado"}</button>`;
+    fb.innerHTML = `<div class="porque"><h4>Por qué</h4>${r.justificacion}</div>
+      <button id="sig">${i + 1 < total ? "Siguiente" : "Ver resultado"}</button>`;
     renderizar(fb);
     $("#sig").onclick = () => {
       i++;
-      i < total ? pintar() : terminar();
+      i < total ? pregunta() : terminar();
     };
   };
 
   const terminar = async () => {
     const r = await api(`/examenes/${ex.examen_id}/finalizar`, { method: "POST" });
-    const pct = Math.round((r.aciertos / r.total) * 100);
-    app().innerHTML = `
-      <h2>${pct >= 70 ? "🎉" : "📚"} ${r.aciertos} / ${r.total} (${pct}%)</h2>
-      <button onclick="vistaExamen(${temaId}, '${nivel}')">Repetir nivel</button>
-      <button class="secundario" onclick="vistaTema(${temaId})">← Volver al tema</button>`;
+    pintar(`
+      <div class="resultado">
+        <div class="nota">${r.aciertos}/${r.total}</div>
+        <div class="de">${Math.round((r.aciertos / r.total) * 100)}% de aciertos</div>
+      </div>
+      <button onclick="configurarExamen(${temaId})">Otro examen</button>
+      <button class="secundario" onclick="vistaTema(${temaId})">← Volver al tema</button>`);
     pintarGasto();
   };
 
-  pintar();
+  pregunta();
 }
 
 window.addEventListener("DOMContentLoaded", () => {

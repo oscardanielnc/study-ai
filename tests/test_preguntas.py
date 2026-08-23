@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from app.db import conectar
 from app.llm.fake import FakeLLMClient
 from app.models import PreguntaGenerada
-from app.services.preguntas import generar_lote, parsear_lote
+from app.services.preguntas import generar, generar_lote, parsear_lote
 
 UNA = {
     "enunciado": "Que mide la resistencia?",
@@ -102,3 +102,29 @@ def test_no_rompe_el_json_ya_bien_escapado():
 def test_sigue_fallando_con_basura_que_no_es_json():
     with pytest.raises(ValueError):
         parsear_lote("lo siento, no puedo generar preguntas")
+
+
+def test_generar_trocea_en_lotes_porque_no_caben_en_una_llamada(con):
+    """Un lote grande desborda max_tokens y vuelve el JSON invalido.
+
+    Medido con el modelo real: una pregunta dificil ronda los 1.200 tokens de
+    salida, asi que 40 en una sola llamada no caben ni de lejos.
+    """
+    llm = FakeLLMClient([_json_lote(10), _json_lote(10), _json_lote(5)])
+    n = generar(con, llm, "m", 1, "facil", cantidad=25, lote=10)
+    assert n == 25
+    assert len(llm.llamadas) == 3
+
+
+def test_generar_pide_al_modelo_solo_lo_que_falta_del_ultimo_lote(con):
+    llm = FakeLLMClient([_json_lote(10), _json_lote(2)])
+    generar(con, llm, "m", 1, "facil", cantidad=12, lote=10)
+    assert "12 preguntas" not in llm.llamadas[1]["sistema"]
+    assert "2 preguntas" in llm.llamadas[1]["sistema"]
+
+
+def test_generar_informa_del_avance(con):
+    llm = FakeLLMClient([_json_lote(10), _json_lote(10)])
+    vistos: list[int] = []
+    generar(con, llm, "m", 1, "facil", cantidad=20, lote=10, avance=vistos.append)
+    assert vistos == [10, 20]

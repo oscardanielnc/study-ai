@@ -1,6 +1,7 @@
 import json
 import re
 import sqlite3
+from collections.abc import Callable
 
 from pydantic import ValidationError
 
@@ -104,3 +105,29 @@ def generar_lote(
     )
     con.commit()
     return len(lote.preguntas)
+
+
+# Tope por llamada. Medido con el modelo real: una pregunta dificil ronda los
+# 1.200 tokens de salida, asi que un lote de 20 desbordaba max_tokens y volvia
+# el JSON invalido. Diez deja margen de sobra.
+LOTE_MAX = 10
+
+
+def generar(
+    con: sqlite3.Connection,
+    llm: LLMClient,
+    modelo: str,
+    tema_id: int,
+    nivel: Nivel,
+    cantidad: int,
+    lote: int = LOTE_MAX,
+    avance: Callable[[int], None] | None = None,
+) -> int:
+    """Genera `cantidad` preguntas troceando en llamadas de `lote` como maximo."""
+    hechas = 0
+    while hechas < cantidad:
+        pedir = min(lote, cantidad - hechas)
+        hechas += generar_lote(con, llm, modelo, tema_id, nivel, pedir)
+        if avance:
+            avance(hechas)
+    return hechas

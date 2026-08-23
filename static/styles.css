@@ -1,48 +1,246 @@
+/* Academic Clarity: papel e tinta. La interfaz se aparta, manda el contenido. */
 :root {
-  --fondo: #1b1d21; --tarjeta: #24272c; --texto: #e8e9ea;
-  --tenue: #9aa0a6; --acento: #4c8dff; --ok: #38b26a; --mal: #e05252;
+  --papel: #fbf9f4;
+  --superficie: #ffffff;
+  --hundido: #f5f3ee;
+  --borde: #e6e2d3;
+  --tinta: #1a2e44;
+  --texto: #2d2d2d;
+  --tenue: #6b6862;
+  --ok-fondo: #eef6f0;
+  --ok-borde: #7fae90;
+  --ok-tinta: #2f6b47;
+  --mal-fondo: #fceeee;
+  --mal-borde: #d99a9a;
+  --mal-tinta: #9c3b3b;
+
+  --r-boton: 12px;
+  --r-tarjeta: 16px;
+  --barra-alto: 84px;
 }
+
 * { box-sizing: border-box; }
+
 body {
-  margin: 0; background: var(--fondo); color: var(--texto);
-  font: 16px/1.6 system-ui, -apple-system, sans-serif;
-  padding-bottom: env(safe-area-inset-bottom);
+  margin: 0;
+  background: var(--papel);
+  color: var(--texto);
+  font: 400 16px/1.6 "Be Vietnam Pro", system-ui, -apple-system, sans-serif;
+  -webkit-text-size-adjust: 100%;
 }
+
+/* Todas las cifras alineadas: no deben bailar al cambiar el marcador. */
+.cifra, #gasto, .marcador { font-family: "JetBrains Mono", ui-monospace, monospace; }
+
+/* ---------- Cabecera ---------- */
+
 #cabecera {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 16px; border-bottom: 1px solid #33363c; position: sticky; top: 0;
-  background: var(--fondo); z-index: 10;
+  gap: 12px; padding: 14px 20px;
+  padding-top: calc(14px + env(safe-area-inset-top));
+  border-bottom: 1px solid var(--borde);
+  position: sticky; top: 0; z-index: 10; background: var(--papel);
 }
-#cabecera h1 { font-size: 18px; margin: 0; }
-#gasto { color: var(--tenue); font-size: 13px; }
-#app { padding: 16px; max-width: 760px; margin: 0 auto; }
-#app h1 { font-size: 24px; }
-#app h2 { font-size: 19px; margin-top: 24px; }
-.tarjeta {
-  background: var(--tarjeta); border-radius: 12px; padding: 14px;
-  margin-bottom: 10px; cursor: pointer;
+#cabecera h1 {
+  margin: 0; font-size: 20px; font-weight: 700; color: var(--tinta);
+  letter-spacing: -0.01em;
 }
-.tarjeta h3 { margin: 0 0 4px; font-size: 16px; }
-.tarjeta small { color: var(--tenue); }
+#gasto {
+  font-size: 12px; color: var(--tenue); background: var(--hundido);
+  border: 1px solid var(--borde); border-radius: 999px; padding: 4px 10px;
+  white-space: nowrap;
+}
+
+#app {
+  padding: 20px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  max-width: 720px; margin: 0 auto;
+}
+#app.con-barra { padding-bottom: calc(var(--barra-alto) + env(safe-area-inset-bottom)); }
+
+/* ---------- Botones ---------- */
+
 button {
-  background: var(--acento); color: #fff; border: 0; border-radius: 10px;
-  padding: 12px 16px; font-size: 15px; cursor: pointer; width: 100%;
-  margin-top: 8px; font-family: inherit;
+  font: inherit; cursor: pointer; border-radius: var(--r-boton);
+  min-height: 48px; padding: 12px 20px; width: 100%;
+  border: 1px solid var(--tinta); background: var(--tinta); color: #fff;
+  font-weight: 600; transition: opacity .15s, background .15s;
 }
-button:disabled { opacity: .85; cursor: default; }
-button.secundario { background: #3a3e45; }
-.opcion { text-align: left; background: var(--tarjeta); }
-.opcion.correcta { background: var(--ok); }
-.opcion.incorrecta { background: var(--mal); }
-.barra { height: 8px; background: #33363c; border-radius: 4px; overflow: hidden; }
-.barra > div { height: 100%; background: var(--acento); transition: width .3s; }
-.justificacion {
-  background: #2c3038; border-left: 3px solid var(--acento);
-  padding: 10px 12px; border-radius: 6px; margin-top: 10px; font-size: 14px;
+button:active { opacity: .85; }
+button:focus-visible { outline: 3px solid rgba(26, 46, 68, .3); outline-offset: 2px; }
+button[disabled] { cursor: default; }
+
+button.secundario { background: transparent; color: var(--tinta); }
+button.fantasma {
+  background: transparent; color: var(--tenue); border-color: var(--borde);
+  font-weight: 400;
 }
-.marcador { color: var(--tenue); font-size: 14px; margin-bottom: 10px; }
-.error { color: var(--mal); }
-code { background: #2c3038; padding: 1px 5px; border-radius: 4px; }
-pre { background: #2c3038; padding: 12px; border-radius: 8px; overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; }
-th, td { border: 1px solid #33363c; padding: 6px 8px; text-align: left; }
+
+.volver {
+  width: auto; min-height: 44px; padding: 8px 4px; border: 0;
+  background: none; color: var(--tenue); font-weight: 500; margin-bottom: 8px;
+}
+
+/* ---------- Tarjetas de tema ---------- */
+
+.tarjeta {
+  background: var(--superficie); border: 1px solid var(--borde);
+  border-radius: var(--r-tarjeta); padding: 18px; margin-bottom: 12px;
+  cursor: pointer;
+}
+.tarjeta:active { background: var(--hundido); }
+.tarjeta h3 {
+  margin: 0 0 6px; font-size: 17px; font-weight: 600; line-height: 1.35;
+  color: var(--tinta);
+}
+.tarjeta small { color: var(--tenue); font-size: 13px; }
+
+.vacio { color: var(--tenue); text-align: center; padding: 48px 20px; }
+
+/* ---------- Resumen ---------- */
+
+#resumen { font-size: 17px; line-height: 1.7; }
+#resumen h1 {
+  font-size: 30px; line-height: 1.2; font-weight: 700; color: var(--tinta);
+  letter-spacing: -0.02em; margin: 0 0 20px;
+}
+#resumen h2 {
+  font-size: 21px; font-weight: 600; color: var(--tinta); margin: 32px 0 8px;
+}
+#resumen h3 { font-size: 18px; font-weight: 600; margin: 24px 0 6px; }
+#resumen p, #resumen li { margin: 10px 0; }
+#resumen ul { padding-left: 22px; }
+#resumen strong { font-weight: 600; color: var(--tinta); }
+#resumen hr { border: 0; border-top: 1px solid var(--borde); margin: 32px 0; }
+#resumen code { font-family: "JetBrains Mono", monospace; font-size: .9em; }
+
+/* Las formulas en bloque respiran y se separan del texto. */
+#resumen .katex-display {
+  background: var(--superficie); border: 1px solid var(--borde);
+  border-radius: var(--r-boton); padding: 16px 12px; margin: 20px 0;
+  overflow-x: auto;
+}
+
+/* Tablas anchas: scrollean dentro, la pagina nunca se mueve en horizontal. */
+.tabla-scroll { overflow-x: auto; margin: 20px 0; }
+#resumen table { border-collapse: collapse; width: 100%; font-size: 15px; }
+#resumen th, #resumen td {
+  border: 1px solid var(--borde); padding: 10px 12px; text-align: left;
+  vertical-align: top;
+}
+#resumen th { background: var(--hundido); font-weight: 600; color: var(--tinta); }
+
+/* Lo que la IA no pudo reproducir se marca, no se disfraza de texto normal. */
+.diagrama {
+  background: var(--hundido); border: 1px solid var(--borde);
+  border-left: 3px solid var(--tinta); border-radius: var(--r-boton);
+  padding: 14px 16px; margin: 20px 0; font-size: 15px; font-style: italic;
+  color: var(--tenue);
+}
+.diagrama::before { content: "🖼 "; font-style: normal; }
+
+/* ---------- Barra inferior fija ---------- */
+
+.barra {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; gap: 10px; padding: 14px 20px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  background: var(--papel); border-top: 1px solid var(--borde);
+}
+.barra button { margin: 0; }
+.barra .principal { flex: 2; }
+.barra .secundario { flex: 3; }
+
+/* ---------- Progreso ---------- */
+
+.progreso {
+  height: 4px; background: var(--borde); border-radius: 999px;
+  overflow: hidden; margin: 12px 0;
+}
+.progreso > div { height: 100%; background: var(--tinta); transition: width .3s; }
+
+/* ---------- Configurar examen ---------- */
+
+.grupo {
+  background: var(--superficie); border: 1px solid var(--borde);
+  border-radius: var(--r-tarjeta); padding: 20px; margin-bottom: 16px;
+}
+.grupo h2 { margin: 0 0 14px; font-size: 18px; font-weight: 600; color: var(--tinta); }
+.opciones-nivel { display: grid; gap: 10px; }
+.cantidades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.cantidades button { padding: 12px 4px; }
+
+.elegible {
+  background: var(--superficie); color: var(--texto);
+  border: 1px solid var(--borde); font-weight: 500;
+}
+.elegible[aria-pressed="true"] {
+  background: var(--tinta); color: #fff; border-color: var(--tinta); font-weight: 600;
+}
+.aviso { color: var(--tenue); font-size: 13px; text-align: center; margin: 4px 0 16px; }
+
+/* ---------- Examen ---------- */
+
+.marcador {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 14px; color: var(--tenue);
+}
+.marcador .aciertos { color: var(--ok-tinta); }
+.marcador .fallos { color: var(--mal-tinta); }
+
+.enunciado {
+  background: var(--superficie); border: 1px solid var(--borde);
+  border-radius: var(--r-tarjeta); padding: 20px; margin: 16px 0 20px;
+  font-size: 18px; line-height: 1.55; font-weight: 500; color: var(--tinta);
+}
+
+#opciones { display: grid; gap: 10px; }
+.opcion {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  text-align: left; background: var(--superficie); color: var(--texto);
+  border: 1px solid var(--borde); font-weight: 500; line-height: 1.4;
+}
+.opcion .marca { font-size: 18px; flex: 0 0 auto; }
+
+/* Acierto y error nunca dependen solo del color: llevan icono y peso propios. */
+.opcion.buena {
+  background: var(--ok-fondo); border-color: var(--ok-borde);
+  color: var(--ok-tinta); font-weight: 600;
+}
+.opcion.mala {
+  background: var(--mal-fondo); border-color: var(--mal-borde);
+  color: var(--mal-tinta); font-weight: 600;
+}
+.opcion.apagada { opacity: .45; }
+
+.porque {
+  background: var(--hundido); border: 1px solid var(--borde);
+  border-radius: var(--r-tarjeta); padding: 16px 18px; margin: 20px 0;
+  font-size: 15px; line-height: 1.6;
+}
+.porque h4 {
+  margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--tenue);
+}
+.porque h4::before { content: "💡 "; }
+
+/* ---------- Resultado ---------- */
+
+.resultado { text-align: center; padding: 40px 0 24px; }
+.resultado .nota {
+  font-family: "JetBrains Mono", monospace; font-size: 56px; font-weight: 500;
+  color: var(--tinta); line-height: 1;
+}
+.resultado .de { color: var(--tenue); font-size: 15px; margin-top: 10px; }
+
+.error { color: var(--mal-tinta); background: var(--mal-fondo);
+  border: 1px solid var(--mal-borde); border-radius: var(--r-boton); padding: 14px; }
+
+.historial { margin-top: 36px; }
+.historial h2 { font-size: 18px; font-weight: 600; color: var(--tinta); }
+.historial .fila {
+  display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 1px solid var(--borde); padding: 12px 2px; font-size: 15px;
+}
+.historial .fila:last-child { border-bottom: 0; }
+.historial .puntaje { font-family: "JetBrains Mono", monospace; color: var(--tinta); }

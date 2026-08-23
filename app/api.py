@@ -1,7 +1,7 @@
 import sqlite3
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.config import Settings
 from app.llm.client import LLMClient
@@ -9,14 +9,18 @@ from app.llm.contabilidad import TopeSuperado, gasto_del_mes, verificar_tope
 from app.models import Nivel
 from app.services import examen as svc_examen
 from app.services.ingesta import Archivo, crear_job, procesar
-from app.services.preguntas import generar_lote
+from app.services.preguntas import LOTE_MAX, generar
 
-TAM_LOTE = 20
-PREGUNTAS_POR_EXAMEN = 10
+CANTIDADES = (10, 20, 30, 40)
 
 
 class NivelBody(BaseModel):
     nivel: Nivel
+
+
+class ExamenBody(BaseModel):
+    nivel: Nivel
+    cantidad: int = Field(ge=1, le=max(CANTIDADES))
 
 
 class RespuestaBody(BaseModel):
@@ -99,43 +103,63 @@ def crear_router(
         con.execute("DELETE FROM temas WHERE id=?", (tema_id,))
         con.commit()
 
+    def _generar(tema_id: int, nivel: Nivel, faltan: int, job_id: int) -> None:
+        con.execute("UPDATE jobs SET estado='en_curso' WHERE id=?", (job_id,))
+        con.commit()
+        try:
+            generar(
+                con,
+                llm,
+                settings.modelo_preguntas,
+                tema_id,
+                nivel,
+                faltan,
+                avance=lambda n: con.execute(
+                    "UPDATE jobs SET progreso_actual=? WHERE id=?", (n, job_id)
+                ),
+            )
+        except Exception as exc:
+            con.execute(
+                "UPDATE jobs SET estado='fallido', error=? WHERE id=?",
+                (str(exc), job_id),
+            )
+        else:
+            con.execute("UPDATE jobs SET estado='completado' WHERE id=?", (job_id,))
+        con.commit()
+
     @r.post("/temas/{tema_id}/examenes")
-    def iniciar_examen(tema_id: int, body: NivelBody):
-        hay = con.execute(
-            "SELECT COUNT(*) AS n FROM preguntas WHERE tema_id=? AND nivel=?",
+    def iniciar_examen(tema_id: int, body: ExamenBody, fondo: BackgroundTasks):
+        # Solo cuentan las no vistas: repetir preguntas ya respondidas no es
+        # un examen, es memoria.
+        sin_ver = con.execute(
+            "SELECT COUNT(*) AS n FROM preguntas"
+            " WHERE tema_id=? AND nivel=? AND veces_vista=0",
             (tema_id, body.nivel),
         ).fetchone()["n"]
-        if hay == 0:
+
+        if sin_ver < body.cantidad:
             try:
                 verificar_tope(con, settings.tope_gasto_mensual_usd)
-                generar_lote(
-                    con, llm, settings.modelo_preguntas, tema_id, body.nivel, TAM_LOTE
-                )
             except TopeSuperado as exc:
                 raise HTTPException(status_code=402, detail=str(exc)) from exc
-            except ValueError as exc:
-                raise HTTPException(status_code=502, detail=str(exc)) from exc
+            faltan = body.cantidad - sin_ver
+            cur = con.execute(
+                "INSERT INTO jobs (tema_id, tipo, estado, progreso_total)"
+                " VALUES (?, 'generar_preguntas', 'pendiente', ?)",
+                (tema_id, faltan),
+            )
+            job_id = int(cur.lastrowid)
+            con.commit()
+            fondo.add_task(_generar, tema_id, body.nivel, faltan, job_id)
+            return {"job_id": job_id, "faltan": faltan}
 
         try:
             examen_id, preguntas = svc_examen.iniciar(
-                con, tema_id, body.nivel, PREGUNTAS_POR_EXAMEN
+                con, tema_id, body.nivel, body.cantidad
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"examen_id": examen_id, "preguntas": preguntas}
-
-    @r.post("/temas/{tema_id}/preguntas")
-    def generar_mas(tema_id: int, body: NivelBody):
-        try:
-            verificar_tope(con, settings.tope_gasto_mensual_usd)
-            n = generar_lote(
-                con, llm, settings.modelo_preguntas, tema_id, body.nivel, TAM_LOTE
-            )
-        except TopeSuperado as exc:
-            raise HTTPException(status_code=402, detail=str(exc)) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        return {"generadas": n}
 
     @r.get("/temas/{tema_id}/examenes")
     def historial(tema_id: int):

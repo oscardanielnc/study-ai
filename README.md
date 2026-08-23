@@ -27,6 +27,9 @@ al cambiar de modelo:
 pytest -m contrato -v
 ```
 
+El frontend no tiene banco de pruebas. `node scripts/check_render.js` cubre lo
+unico que ya fallo dos veces en silencio: el render de formulas y diagramas.
+
 ## Arquitectura
 
 ```
@@ -49,7 +52,13 @@ DeepSeek directo, que evita el margen de OpenRouter.
 |---|---|---|
 | Transcripción | `MODELO_TRANSCRIPCION` | Único paso con visión. Razonamiento **desactivado** |
 | Resumen | `MODELO_RESUMEN` | DeepSeek V4 Pro |
-| Preguntas | `MODELO_PREGUNTAS` | DeepSeek V4 Pro, lote de 20, perezoso |
+| Preguntas | `MODELO_PREGUNTAS` | DeepSeek V4 Pro, solo al pedir el examen |
+
+El examen se configura antes de generarlo: nivel y cantidad (10 a 40). Solo se
+paga por las preguntas que faltan; las que quedaron sin ver se reutilizan. Cada
+llamada produce como mucho 10 preguntas (una dificil ronda los 1.200 tokens de
+salida, asi que un lote de 20 desbordaba `max_tokens`) y el conjunto se genera
+en segundo plano con barra de progreso, porque el tunel corta a los 100 s.
 
 El modelo de visión razona por defecto y es capaz de gastar los 8000 tokens
 pensando, devolviendo texto vacío. Se le manda `thinking: disabled`: transcribir
