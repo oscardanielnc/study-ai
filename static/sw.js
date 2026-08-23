@@ -2,7 +2,7 @@
 // un resumen o un examen obsoletos serian peores que un error de conexion.
 const CACHE = "estudia-v3";
 const ARMAZON = [
-  "/", "/index.html", "/styles.css", "/app.js",
+  "/", "/index.html", "/styles.css?v=3", "/app.js?v=3",
   "/vendor/marked.min.js", "/vendor/katex.min.js",
   "/vendor/katex.min.css", "/vendor/auto-render.min.js",
   "/vendor/fonts.css",
