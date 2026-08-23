@@ -1,0 +1,38 @@
+{
+  "packageId": "dev.oscarnavarro.study",
+  "host": "study.oscarnavarro.dev",
+  "name": "Estudia",
+  "launcherName": "Estudia",
+  "display": "standalone",
+  "orientation": "portrait",
+  "themeColor": "#1a2e44",
+  "themeColorDark": "#1a2e44",
+  "navigationColor": "#1a2e44",
+  "navigationColorDark": "#1a2e44",
+  "navigationDividerColor": "#00000000",
+  "navigationDividerColorDark": "#00000000",
+  "backgroundColor": "#fbf9f4",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://study.oscarnavarro.dev/icons/icon-512.png",
+  "maskableIconUrl": "https://study.oscarnavarro.dev/icons/icon-512.png",
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://study.oscarnavarro.dev/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://study.oscarnavarro.dev/",
+  "minSdkVersion": 21,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "estudia"
+  }
+}

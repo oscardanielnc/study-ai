@@ -9,3 +9,12 @@ data/
 node_modules/
 spike-resultados/
 try/
+
+# Proyecto Android generado por Bubblewrap. Se versiona twa-manifest.json,
+# que es la fuente; el resto lo regenera `bubblewrap update`.
+android/*
+!android/twa-manifest.json
+# La clave de firma NUNCA entra en git: quien la tenga puede publicar
+# actualizaciones de la app en nombre de Oscar.
+*.keystore
+*.jks
