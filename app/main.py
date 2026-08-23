@@ -16,6 +16,18 @@ ESTATICOS = Path(__file__).parent.parent / "static"
 
 def crear_app(con: sqlite3.Connection, llm: LLMClient, settings: Settings) -> FastAPI:
     aplicacion = FastAPI(title="Estudia")
+
+    @aplicacion.middleware("http")
+    async def sin_cache_en_el_armazon(peticion, siguiente):
+        """Cloudflare cachea .js y .css por defecto: sin esto un despliegue
+        tarda horas en llegar al movil. Lo vendido (`/vendor`, `/icons`) no
+        cambia nunca y se deja cachear a gusto."""
+        respuesta = await siguiente(peticion)
+        ruta = peticion.url.path
+        if not ruta.startswith(("/vendor/", "/icons/", "/api/")):
+            respuesta.headers["Cache-Control"] = "no-cache"
+        return respuesta
+
     aplicacion.include_router(crear_router(con, llm, settings))
     if ESTATICOS.is_dir():
         aplicacion.mount(

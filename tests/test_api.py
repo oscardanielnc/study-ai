@@ -221,3 +221,15 @@ def test_el_resumen_cuenta_como_un_paso_mas_del_progreso(cliente):
     job = c.get(f"/api/jobs/{r.json()['job_id']}").json()
     assert job["progreso_total"] == 2
     assert job["progreso_actual"] == 2
+
+
+def test_el_armazon_no_se_queda_cacheado_en_el_borde(cliente):
+    # Cloudflare cachea .js por defecto: sin esto, un despliegue nuevo tarda
+    # horas en llegar al movil de nadie.
+    c, _, _ = cliente
+    assert c.get("/app.js").headers["cache-control"] == "no-cache"
+    assert c.get("/").headers["cache-control"] == "no-cache"
+    # Las librerias vendidas no cambian nunca: que se cacheen a gusto.
+    assert "no-cache" not in c.get("/vendor/marked.min.js").headers.get(
+        "cache-control", ""
+    )
