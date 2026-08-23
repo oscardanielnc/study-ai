@@ -150,8 +150,13 @@ button.fantasma {
 .barra button { margin: 0; }
 .barra .principal { flex: 2; }
 .barra .secundario { flex: 3; }
+.barra > button:only-child { flex: 1; }
 
 /* ---------- Progreso ---------- */
+
+.cargando { font-size: 17px; color: var(--tinta); margin: 40px 0 0; text-align: center; }
+.cargando + .progreso { margin: 16px 0 8px; }
+.cargando ~ .marcador { justify-content: center; }
 
 .progreso {
   height: 4px; background: var(--borde); border-radius: 999px;

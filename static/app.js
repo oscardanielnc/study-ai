@@ -7,6 +7,10 @@ const NIVELES = [
 ];
 const CANTIDADES = [10, 20, 30, 40];
 
+// Sondeo del job en curso. Vive arriba porque `pintar` lo cancela.
+let sondear = null;
+let temporizador = null;
+
 async function api(ruta, opciones = {}) {
   const r = await fetch(`/api${ruta}`, opciones);
   if (!r.ok) {
@@ -17,22 +21,32 @@ async function api(ruta, opciones = {}) {
 }
 
 function pintar(html, conBarra = false) {
+  // Cambiar de pantalla cancela el sondeo anterior: si no, dos jobs solapados
+  // se pisarian la barra de progreso.
+  clearTimeout(temporizador);
+  sondear = null;
   app().className = conBarra ? "con-barra" : "";
   app().innerHTML = html;
+}
+
+/** Pantalla de espera con barra. Se pinta en cuanto hay algo que esperar: el
+ *  usuario nunca debe quedarse mirando una pantalla quieta. */
+function cargando(titulo, detalle = "") {
+  pintar(`<p class="cargando">${titulo}</p>
+    <div class="progreso"><div id="pb" style="width:0%"></div></div>
+    <p id="pt" class="marcador">${detalle}</p>`);
+}
+
+function avanzar(fraccion, detalle = "") {
+  const pb = $("#pb");
+  if (!pb) return;
+  pb.style.width = `${Math.round(fraccion * 100)}%`;
+  $("#pt").textContent = detalle;
 }
 
 function fallo(mensaje, volver) {
   pintar(`<p class="error">${mensaje}</p>
     <button class="secundario" onclick="${volver}">← Volver</button>`);
-}
-
-async function pintarGasto() {
-  try {
-    const g = await api("/gasto");
-    $("#gasto").textContent = `$${g.mes_usd.toFixed(3)} / $${g.tope_usd}`;
-  } catch {
-    $("#gasto").textContent = "";
-  }
 }
 
 /** El modelo alterna entre $...$ y \(...\) para las formulas. Hay que pasarlo
@@ -80,17 +94,97 @@ async function vistaTemas() {
             )
             .join("")
     }`);
-  pintarGasto();
+}
+
+// ---------- Subida ----------
+
+/** El servidor reduce las imagenes a 1100 px de todos modos, asi que bajarlas
+ *  aqui no cuesta calidad util: una foto de 12 MP pasa de ~4 MB a ~250 KB y la
+ *  subida, de un minuto a unos segundos. Menos tiempo en el que apagar la
+ *  pantalla pueda cortarla, que es lo unico que aun no vive en el servidor. */
+const LADO_MAX = 1600;
+
+function comprimir(archivo) {
+  if (!archivo.type.startsWith("image/")) return Promise.resolve(archivo);
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(archivo);
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(archivo); // formato que el movil no sabe pintar: decide el servidor
+    };
+    img.onload = () => {
+      const escala = Math.min(1, LADO_MAX / Math.max(img.width, img.height));
+      const lienzo = document.createElement("canvas");
+      lienzo.width = Math.round(img.width * escala);
+      lienzo.height = Math.round(img.height * escala);
+      lienzo.getContext("2d").drawImage(img, 0, 0, lienzo.width, lienzo.height);
+      URL.revokeObjectURL(url);
+      lienzo.toBlob(
+        (b) =>
+          resolve(
+            b && b.size < archivo.size
+              ? new File([b], archivo.name, { type: "image/jpeg" })
+              : archivo
+          ),
+        "image/jpeg",
+        0.85
+      );
+    };
+    img.src = url;
+  });
+}
+
+/** fetch no informa del progreso de subida, y aqui importa: son los segundos en
+ *  los que el usuario no sabe si esta pasando algo. XHR si lo da. */
+function subir(ruta, archivos, alProgreso) {
+  return new Promise((resolve, rechazar) => {
+    const fd = new FormData();
+    for (const f of archivos) fd.append("archivos", f);
+    const x = new XMLHttpRequest();
+    x.open("POST", `/api${ruta}`);
+    x.upload.onprogress = (e) =>
+      e.lengthComputable && alProgreso(e.loaded / e.total);
+    x.onload = () => {
+      let cuerpo = {};
+      try {
+        cuerpo = JSON.parse(x.responseText);
+      } catch {}
+      if (x.status >= 200 && x.status < 300) return resolve(cuerpo);
+      rechazar(new Error(cuerpo.detail || `Error ${x.status}`));
+    };
+    x.onerror = () =>
+      rechazar(new Error("Se cortó la conexión al subir. Inténtalo otra vez."));
+    x.send(fd);
+  });
 }
 
 function nuevoTema() {
   const input = $("#archivos");
   input.onchange = async () => {
-    if (!input.files.length) return;
-    const fd = new FormData();
-    for (const f of input.files) fd.append("archivos", f);
+    const archivos = [...input.files];
+    input.value = ""; // permite reintentar con los mismos archivos
+    if (!archivos.length) return;
+
+    // Respuesta inmediata: preparar las fotos ya tarda sus segundos y hasta
+    // ahora ese hueco se veia como si la app no hubiera hecho nada.
+    cargando("Preparando tus archivos…", `0 / ${archivos.length}`);
     try {
-      const { tema_id, job_id } = await api("/temas", { method: "POST", body: fd });
+      const listos = [];
+      for (const f of archivos) {
+        listos.push(await comprimir(f));
+        avanzar(
+          listos.length / archivos.length,
+          `${listos.length} / ${archivos.length}`
+        );
+      }
+      cargando("Subiendo…");
+      const { tema_id, job_id } = await subir("/temas", listos, (r) =>
+        avanzar(r, `${Math.round(r * 100)}%`)
+      );
+      // El hash entra ya: si el movil descarta la pestana, al volver se
+      // reengancha al proceso en vez de perderlo.
+      location.hash = `tema-${tema_id}`;
       seguirJob(job_id, "Procesando tus apuntes…", () => vistaTema(tema_id));
     } catch (e) {
       fallo(e.message, "vistaTemas()");
@@ -99,26 +193,53 @@ function nuevoTema() {
   input.click();
 }
 
-/** Sondea un job hasta que termina. El tunel corta las peticiones a los 100 s:
- *  nunca esperamos dentro de la misma peticion HTTP. */
+/** El trabajo ocurre entero en el servidor; esto solo mira. Por eso apagar la
+ *  pantalla, cambiar de pestana o recargar ya no lo interrumpe: como mucho se
+ *  deja de mirar un rato. Un fallo de red suelto tampoco lo mata: se insiste. */
+const REINTENTOS = 60; // ~5 min de red caida antes de rendirse
+
 function seguirJob(jobId, titulo, alTerminar, alFallar) {
-  pintar(`<p>${titulo}</p>
-    <div class="progreso"><div id="pb" style="width:0%"></div></div>
-    <p id="pt" class="marcador"></p>`);
+  cargando(titulo);
+  let fallos = 0;
   const tic = async () => {
-    const j = await api(`/jobs/${jobId}`);
-    const pct = j.progreso_total ? (j.progreso_actual / j.progreso_total) * 100 : 0;
-    $("#pb").style.width = `${pct}%`;
-    $("#pt").textContent = `${j.progreso_actual} / ${j.progreso_total}`;
+    clearTimeout(temporizador);
+    if (sondear !== tic) return; // ya se cambio de pantalla
+    let j;
+    try {
+      j = await api(`/jobs/${jobId}`);
+      fallos = 0;
+    } catch {
+      if (++fallos > REINTENTOS) {
+        return fallo(
+          "Sin conexión con el servidor. El proceso sigue en marcha:" +
+            " vuelve a entrar al tema dentro de un momento.",
+          "vistaTemas()"
+        );
+      }
+      temporizador = setTimeout(tic, 5000);
+      return;
+    }
+    avanzar(
+      j.progreso_total ? j.progreso_actual / j.progreso_total : 0,
+      `${j.progreso_actual} / ${j.progreso_total}`
+    );
     if (j.estado === "completado") return alTerminar();
     if (j.estado === "fallido") {
-      pintar(`<p class="error">Falló: ${j.error}</p>`);
+      pintar(`<p class="error">Falló: ${j.error}</p>
+        <button class="secundario" onclick="vistaTemas()">← Volver</button>`);
       return alFallar ? alFallar() : null;
     }
-    setTimeout(tic, 2000);
+    temporizador = setTimeout(tic, 2000);
   };
+  sondear = tic;
   tic();
 }
+
+// Al volver de la pantalla apagada el temporizador puede llevar minutos parado:
+// se sondea al instante en vez de esperar al siguiente turno.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && sondear) sondear();
+});
 
 // ---------- Vista de un tema ----------
 
@@ -133,11 +254,27 @@ function marcarDiagramas(html) {
 
 async function vistaTema(id) {
   location.hash = `tema-${id}`;
-  let t, hist;
+  let t, hist, job;
   try {
-    [t, hist] = await Promise.all([api(`/temas/${id}`), api(`/temas/${id}/examenes`)]);
+    [t, hist, job] = await Promise.all([
+      api(`/temas/${id}`),
+      api(`/temas/${id}/examenes`),
+      api(`/temas/${id}/job`),
+    ]);
   } catch (e) {
     return fallo(e.message, "vistaTemas()");
+  }
+
+  // Reenganche: si el tema sigue procesandose (recarga, pestana descartada,
+  // movil dormido) se vuelve a la barra en vez de mostrar un resumen vacio.
+  if (job && (job.estado === "pendiente" || job.estado === "en_curso")) {
+    return seguirJob(
+      job.id,
+      job.tipo === "generar_preguntas"
+        ? "Preparando tus preguntas…"
+        : "Procesando tus apuntes…",
+      () => vistaTema(id)
+    );
   }
 
   pintar(
@@ -158,9 +295,7 @@ async function vistaTema(id) {
     }
     <div class="barra">
       <button class="principal" onclick="configurarExamen(${id})">Tomar examen</button>
-      <button class="secundario" onclick="anadirMaterial(${id})">Añadir material</button>
-    </div>
-    <input type="file" id="mas" multiple accept="image/*,.pdf" hidden>`,
+    </div>`,
     true
   );
 
@@ -177,26 +312,6 @@ async function vistaTema(id) {
     caja.appendChild(tabla);
   });
   renderizar(destino);
-  pintarGasto();
-}
-
-function anadirMaterial(temaId) {
-  const input = $("#mas");
-  input.onchange = async () => {
-    if (!input.files.length) return;
-    const fd = new FormData();
-    for (const f of input.files) fd.append("archivos", f);
-    try {
-      const { job_id } = await api(`/temas/${temaId}/material`, {
-        method: "POST",
-        body: fd,
-      });
-      seguirJob(job_id, "Procesando el material nuevo…", () => vistaTema(temaId));
-    } catch (e) {
-      fallo(e.message, `vistaTema(${temaId})`);
-    }
-  };
-  input.click();
 }
 
 // ---------- Configurar examen ----------
@@ -361,8 +476,7 @@ function vistaExamen(temaId, ex) {
       </div>
       <button onclick="configurarExamen(${temaId})">Otro examen</button>
       <button class="secundario" onclick="vistaTema(${temaId})">← Volver al tema</button>`);
-    pintarGasto();
-  };
+    };
 
   pregunta();
 }

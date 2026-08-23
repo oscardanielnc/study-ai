@@ -179,10 +179,45 @@ def test_tema_inexistente_devuelve_404(cliente):
     assert c.get("/api/temas/999").status_code == 404
 
 
-def test_anadir_material_a_tema_inexistente_devuelve_404(cliente):
+
+
+def test_el_job_de_un_tema_se_puede_recuperar_tras_recargar(cliente):
+    # Si el movil descarta la pestana a mitad de proceso, al volver hay que
+    # poder reengancharse al job sin depender de nada guardado en el cliente.
     c, _, _ = cliente
-    r = c.post(
-        "/api/temas/999/material",
-        files={"archivos": ("a.jpg", _jpeg(), "image/jpeg")},
-    )
-    assert r.status_code == 404
+    tema_id = _crear_tema(c)
+    r = c.get(f"/api/temas/{tema_id}/job")
+    assert r.status_code == 200
+    assert r.json()["estado"] == "completado"
+
+
+def test_un_tema_sin_jobs_devuelve_null(cliente):
+    c, con, _ = cliente
+    con.execute("INSERT INTO temas (titulo) VALUES ('suelto')")
+    con.commit()
+    tema_id = con.execute("SELECT MAX(id) AS id FROM temas").fetchone()["id"]
+    assert c.get(f"/api/temas/{tema_id}/job").json() is None
+
+
+def test_una_subida_cortada_no_deja_temas_fantasma(cliente, monkeypatch):
+    # El tema no debe existir hasta que los bytes estan en el servidor: si no,
+    # una subida cortada deja una tarjeta 'Procesando...' eterna en la lista.
+    c, con, _ = cliente
+
+    async def revienta(self, size=-1):
+        raise ConnectionError("cliente desconectado")
+
+    monkeypatch.setattr("starlette.datastructures.UploadFile.read", revienta)
+    with pytest.raises(ConnectionError):
+        c.post("/api/temas", files={"archivos": ("a.jpg", _jpeg(), "image/jpeg")})
+    assert con.execute("SELECT COUNT(*) AS n FROM temas").fetchone()["n"] == 0
+
+
+def test_el_resumen_cuenta_como_un_paso_mas_del_progreso(cliente):
+    # Transcribir 1 imagen y resumir son 2 pasos: si el total fuese 1, la barra
+    # se quedaria clavada al 100% durante todo el resumen.
+    c, _, _ = cliente
+    r = c.post("/api/temas", files={"archivos": ("a.jpg", _jpeg(), "image/jpeg")})
+    job = c.get(f"/api/jobs/{r.json()['job_id']}").json()
+    assert job["progreso_total"] == 2
+    assert job["progreso_actual"] == 2

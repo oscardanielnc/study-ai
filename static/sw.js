@@ -1,6 +1,6 @@
 // Cachea SOLO el armazon. El contenido (API) siempre va a la red:
 // un resumen o un examen obsoletos serian peores que un error de conexion.
-const CACHE = "estudia-v2";
+const CACHE = "estudia-v3";
 const ARMAZON = [
   "/", "/index.html", "/styles.css", "/app.js",
   "/vendor/marked.min.js", "/vendor/katex.min.js",

@@ -7,7 +7,12 @@ from pypdf import PdfWriter
 from app.config import Settings
 from app.db import conectar
 from app.llm.fake import FakeLLMClient
-from app.services.ingesta import Archivo, crear_job, procesar
+from app.services.ingesta import (
+    Archivo,
+    crear_job,
+    marcar_interrumpidos,
+    procesar,
+)
 
 MD = "# Tema\n\n## Puntos clave\n\n- x\n"
 
@@ -53,10 +58,10 @@ def test_marca_el_job_como_completado(con, settings):
     procesar(con, FakeLLMClient(["T1", MD]), settings, 1, job,
              [Archivo("a.jpg", _jpeg())])
     fila = con.execute(
-        "SELECT estado, progreso_actual FROM jobs WHERE id=?", (job,)
+        "SELECT estado, progreso_actual, progreso_total FROM jobs WHERE id=?", (job,)
     ).fetchone()
     assert fila["estado"] == "completado"
-    assert fila["progreso_actual"] == 1
+    assert fila["progreso_actual"] == fila["progreso_total"]
 
 
 def test_genera_el_resumen_al_terminar(con, settings):
@@ -88,3 +93,26 @@ def test_pdf_escaneado_cae_a_vision(con, settings):
     assert con.execute(
         "SELECT tipo FROM fuentes WHERE tema_id=1"
     ).fetchone()["tipo"] == "pdf"
+
+
+def test_al_arrancar_los_jobs_a_medias_se_marcan_fallidos(con):
+    # Si el servidor se reinicia, nadie va a retomar ese job: dejarlo 'en_curso'
+    # condena al cliente a sondear para siempre.
+    con.execute("INSERT INTO temas (titulo) VALUES ('t')")
+    a = crear_job(con, 1, 2)
+    b = crear_job(con, 1, 1)
+    con.execute("UPDATE jobs SET estado='en_curso' WHERE id=?", (b,))
+    hecho = crear_job(con, 1, 1)
+    con.execute("UPDATE jobs SET estado='completado' WHERE id=?", (hecho,))
+    con.commit()
+
+    marcar_interrumpidos(con)
+
+    estados = {
+        f["id"]: (f["estado"], f["error"])
+        for f in con.execute("SELECT id, estado, error FROM jobs")
+    }
+    assert estados[a][0] == "fallido"
+    assert estados[b][0] == "fallido"
+    assert "interrump" in estados[b][1].lower()
+    assert estados[hecho][0] == "completado"

@@ -52,25 +52,15 @@ def crear_router(
         except TopeSuperado as exc:
             raise HTTPException(status_code=402, detail=str(exc)) from exc
 
+        # El tema se crea DESPUES de tener los bytes: si la subida se corta a
+        # medias no queda una tarjeta 'Procesando...' eterna en la lista.
+        datos = await _leer(archivos)
         cur = con.execute("INSERT INTO temas (titulo) VALUES ('Procesando...')")
         tema_id = int(cur.lastrowid)
         con.commit()
-
-        datos = await _leer(archivos)
         job_id = crear_job(con, tema_id, len(datos))
         fondo.add_task(procesar, con, llm, settings, tema_id, job_id, datos)
         return {"tema_id": tema_id, "job_id": job_id}
-
-    @r.post("/temas/{tema_id}/material")
-    async def anadir_material(
-        tema_id: int, fondo: BackgroundTasks, archivos: list[UploadFile]
-    ):
-        if con.execute("SELECT 1 FROM temas WHERE id=?", (tema_id,)).fetchone() is None:
-            raise HTTPException(status_code=404, detail="Tema no encontrado")
-        datos = await _leer(archivos)
-        job_id = crear_job(con, tema_id, len(datos))
-        fondo.add_task(procesar, con, llm, settings, tema_id, job_id, datos)
-        return {"job_id": job_id}
 
     @r.get("/jobs/{job_id}")
     def ver_job(job_id: int):
@@ -78,6 +68,25 @@ def crear_router(
         if f is None:
             raise HTTPException(status_code=404, detail="Job no encontrado")
         return {
+            "estado": f["estado"],
+            "progreso_actual": f["progreso_actual"],
+            "progreso_total": f["progreso_total"],
+            "error": f["error"],
+        }
+
+    @r.get("/temas/{tema_id}/job")
+    def ultimo_job(tema_id: int):
+        """El job vivo de un tema. Permite reengancharse a un proceso en curso
+        tras recargar o tras que el movil descarte la pestana."""
+        f = con.execute(
+            "SELECT * FROM jobs WHERE tema_id=? ORDER BY id DESC LIMIT 1",
+            (tema_id,),
+        ).fetchone()
+        if f is None:
+            return None
+        return {
+            "id": f["id"],
+            "tipo": f["tipo"],
             "estado": f["estado"],
             "progreso_actual": f["progreso_actual"],
             "progreso_total": f["progreso_total"],
@@ -124,7 +133,11 @@ def crear_router(
                 (str(exc), job_id),
             )
         else:
-            con.execute("UPDATE jobs SET estado='completado' WHERE id=?", (job_id,))
+            con.execute(
+                "UPDATE jobs SET estado='completado',"
+                " progreso_actual=progreso_total WHERE id=?",
+                (job_id,),
+            )
         con.commit()
 
     @r.post("/temas/{tema_id}/examenes")

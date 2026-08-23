@@ -9,6 +9,7 @@ from app.config import Settings, get_settings
 from app.db import conectar
 from app.llm.client import LLMClient
 from app.llm.openrouter import OpenRouterClient
+from app.services.ingesta import marcar_interrumpidos
 
 ESTATICOS = Path(__file__).parent.parent / "static"
 
@@ -25,8 +26,10 @@ def crear_app(con: sqlite3.Connection, llm: LLMClient, settings: Settings) -> Fa
 
 def app() -> FastAPI:
     settings = get_settings()
+    con = conectar(settings.db_path)
+    marcar_interrumpidos(con)
     return crear_app(
-        conectar(settings.db_path),
+        con,
         OpenRouterClient(settings.openrouter_api_key, base_url=settings.llm_base_url),
         settings,
     )

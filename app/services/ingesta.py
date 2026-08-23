@@ -14,14 +14,28 @@ class Archivo:
     datos: bytes
 
 
-def crear_job(con: sqlite3.Connection, tema_id: int, total: int) -> int:
+def crear_job(con: sqlite3.Connection, tema_id: int, n_archivos: int) -> int:
+    """El resumen cuenta como un paso mas: si no, la barra se clava al 100%
+    durante los ~30 s que tarda en escribirlo."""
     cur = con.execute(
         "INSERT INTO jobs (tema_id, tipo, estado, progreso_total)"
         " VALUES (?, 'transcribir', 'pendiente', ?)",
-        (tema_id, total),
+        (tema_id, n_archivos + 1),
     )
     con.commit()
     return int(cur.lastrowid)
+
+
+def marcar_interrumpidos(con: sqlite3.Connection) -> None:
+    """Al arrancar, los jobs a medias son de un proceso que ya no existe.
+    Nadie los va a retomar, asi que se cierran en falso en vez de dejar al
+    cliente sondeando para siempre."""
+    con.execute(
+        "UPDATE jobs SET estado='fallido',"
+        " error='Se interrumpio el servidor a mitad del proceso.'"
+        " WHERE estado IN ('pendiente','en_curso')"
+    )
+    con.commit()
 
 
 def _guardar_fuente(
@@ -88,5 +102,9 @@ def procesar(
         con.commit()
         return
 
-    con.execute("UPDATE jobs SET estado='completado' WHERE id=?", (job_id,))
+    con.execute(
+        "UPDATE jobs SET estado='completado', progreso_actual=progreso_total"
+        " WHERE id=?",
+        (job_id,),
+    )
     con.commit()
