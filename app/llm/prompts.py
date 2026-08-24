@@ -16,46 +16,75 @@ Devuelve solo la transcripción, sin comentarios ni preámbulo.\
 RESUMEN = """Eres un profesor que prepara material de estudio en español.
 
 Vas a recibir {n} documento{s} transcrito{s} de los apuntes de un alumno,
-separado{s} por encabezados "## Documento N de {n}".
+separado{s} por encabezados "## Documento N".{continua}
 
-Redacta con TODOS ellos un único resumen de estudio en Markdown:
-- Un título de nivel 1 (#) breve y descriptivo del tema completo.
-- Subtítulos (##) por cada bloque conceptual.
+Redacta con TODOS ellos material de estudio en Markdown.
+
+Que se va:
+- La redundancia: lo mismo dicho dos veces, los rodeos, las frases de relleno,
+  los ejemplos repetidos que no añaden nada nuevo.
+
+Que se queda, sin excepcion:
+- Definiciones, cifras, fechas, nombres, clasificaciones y sus criterios.
+- Fórmulas (en LaTeX: $ en línea, $$ en bloque), con lo que significa cada
+  símbolo.
+- Procesos y sus pasos, causas y consecuencias, excepciones y casos limite.
+- Cualquier cosa que pueda entrar en un examen.
+
+Reglas:
+{titulo}- Subtítulos (##) por cada bloque conceptual, en el orden de los apuntes.
 - Cubre TODOS los documentos. Ninguno puede quedar fuera ni reducirse a una
-  línea: cada uno aporta contenido evaluable distinto.
-- Condensa la redundancia, nunca el contenido. Si algo puede entrar en un
-  examen, tiene que estar aquí: definiciones, cifras, clasificaciones,
-  fórmulas, ejemplos y excepciones.
-- Fórmulas en LaTeX ($ en línea, $$ en bloque).
-- Una sección final "## Puntos clave" con viñetas.
+  línea: cada uno aporta contenido distinto.
+{cierre}- Conserva las marcas [?] y los bloques [DIAGRAMA: ...] que encuentres.
 
-Extensión objetivo: unas {objetivo} palabras. Quédate por debajo solo si los
-apuntes de verdad no dan para más; nunca por comodidad.
+Extensión: unas {objetivo} palabras, algo más de la mitad de lo que recibes.
+Es una guía, no un límite. Si el contenido da para más, escribe más: NUNCA
+tires información para que quepa en una extensión. Solo se recorta lo que
+sobra, nunca lo que se estudia.
 
-Conserva las marcas [?] y los bloques [DIAGRAMA: ...] que encuentres.
 Devuelve solo el Markdown."""
 
-
-# Techo de una sola respuesta del proveedor. Pedir mas no da mas: da un
-# finish_reason=length y texto vacio, que es como se perdio un tema entero de
-# cinco fotos ya transcritas.
-TECHO_PALABRAS = 2500
+# Cuanto del original sobrevive. Los apuntes traen mucha repeticion, asi que
+# por debajo de esto se empieza a perder materia; por encima, se copia.
+RATIO = 0.55
 
 
 def objetivo_palabras(palabras_entrada: int) -> int:
     """Sin un objetivo explicito el modelo escribe siempre lo mismo: cinco
     fotos daban un resumen igual de largo que una sola, comprimiendo cinco
-    veces mas y tirando el 80% de lo estudiable. La extension tiene que
-    seguir a la entrada, pero sin pasarse de lo que cabe en una respuesta."""
-    return min(TECHO_PALABRAS, max(300, round(palabras_entrada * 0.7 / 50) * 50))
+    veces mas y tirando el 80% de lo estudiable. No hay techo: si el objetivo
+    no cabe en una respuesta, `repartir` lo trocea en varias llamadas."""
+    return max(300, round(palabras_entrada * RATIO / 50) * 50)
 
 
-def prompt_resumen(n_documentos: int, palabras_entrada: int) -> str:
-    objetivo = objetivo_palabras(palabras_entrada)
+def prompt_resumen(
+    n_documentos: int,
+    palabras_entrada: int,
+    primero: bool = True,
+    ultimo: bool = True,
+) -> str:
+    """`primero`/`ultimo` marcan la posicion del bloque: solo el primero pone
+    el titulo del tema y solo el ultimo cierra con los puntos clave."""
     return RESUMEN.format(
         n=n_documentos,
         s="" if n_documentos == 1 else "s",
-        objetivo=objetivo,
+        objetivo=objetivo_palabras(palabras_entrada),
+        continua=(
+            ""
+            if primero
+            else " Son la continuacion de unos apuntes que ya empezaste a resumir."
+        ),
+        titulo=(
+            "- Empieza con un título de nivel 1 (#) breve y descriptivo del tema.\n"
+            if primero
+            else "- NO pongas titulo de nivel 1 (#): esto continua un resumen ya"
+            " empezado.\n  Empieza directamente por un subtítulo (##).\n"
+        ),
+        cierre=(
+            '- Cierra con una sección "## Puntos clave" con viñetas.\n'
+            if ultimo
+            else "- No cierres ni concluyas: el resumen sigue después.\n"
+        ),
     )
 
 

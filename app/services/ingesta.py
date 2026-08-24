@@ -108,8 +108,19 @@ def procesar(
         con.execute("UPDATE jobs SET progreso_actual=? WHERE id=?", (i, job_id))
         con.commit()
 
+    def resumen_avanza(hechos: int, bloques: int) -> None:
+        # El resumen puede necesitar varias llamadas: el total no se sabe
+        # hasta tener las transcripciones, asi que se corrige aqui.
+        con.execute(
+            "UPDATE jobs SET progreso_actual=?, progreso_total=? WHERE id=?",
+            (len(archivos) + hechos, len(archivos) + bloques, job_id),
+        )
+        con.commit()
+
     try:
-        generar_resumen(con, llm, settings.modelo_resumen, tema_id)
+        generar_resumen(
+            con, llm, settings.modelo_resumen, tema_id, avance=resumen_avanza
+        )
     except Exception as exc:
         con.execute(
             "UPDATE jobs SET estado='fallido', error=? WHERE id=?",

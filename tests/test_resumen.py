@@ -5,8 +5,13 @@ import pytest
 from app.db import conectar
 from app.llm.client import LLMError
 from app.llm.fake import FakeLLMClient
-from app.llm.prompts import TECHO_PALABRAS, prompt_resumen
-from app.services.resumen import extraer_titulo, generar_resumen
+from app.llm.prompts import RATIO, prompt_resumen
+from app.services.resumen import (
+    PALABRAS_POR_RESPUESTA,
+    extraer_titulo,
+    generar_resumen,
+    repartir,
+)
 
 MD = "# Ley de Ohm\n\n## Enunciado\n\n$V = IR$\n\n## Puntos clave\n\n- Uno\n"
 
@@ -105,8 +110,10 @@ def test_el_resumen_no_razona():
     assert llm.llamadas[0]["sin_razonamiento"] is True
 
 
-def test_el_objetivo_no_pasa_de_lo_que_cabe_en_una_respuesta():
-    assert _objetivo(prompt_resumen(20, 100000)) <= TECHO_PALABRAS
+def test_el_objetivo_no_tiene_techo():
+    """Con 10.000 palabras de apuntes el resumen tiene que ser de miles de
+    palabras, no recortarse para caber en una sola llamada."""
+    assert _objetivo(prompt_resumen(20, 10000)) >= 4000
 
 
 def test_reintenta_mas_corto_si_el_modelo_se_queda_sin_presupuesto():
@@ -132,13 +139,13 @@ class _LlmQueFallaLaPrimera(FakeLLMClient):
         return super().completar(**kw)
 
 
-def _con_fuentes():
+def _con_fuentes(*textos):
     from app.db import conectar
     import tempfile, pathlib as _p
     d = tempfile.mkdtemp()
     con = conectar(str(_p.Path(d) / "t.db"))
     con.execute("INSERT INTO temas (id, titulo) VALUES (1, 'Sin titulo')")
-    for i, t in enumerate(["Parte A " * 200, "Parte B " * 200]):
+    for i, t in enumerate(textos or ("Parte A " * 200, "Parte B " * 200)):
         con.execute(
             "INSERT INTO fuentes (tema_id, nombre_original, tipo, transcripcion)"
             " VALUES (1, ?, 'imagen', ?)",
@@ -146,3 +153,63 @@ def _con_fuentes():
         )
     con.commit()
     return con
+
+
+# ---------- Reparto en bloques ----------
+
+
+def _palabras(n):
+    return " ".join(["palabra"] * n)
+
+
+def test_lo_que_cabe_en_una_respuesta_va_en_un_solo_bloque():
+    assert len(repartir([_palabras(500), _palabras(400)])) == 1
+
+
+def test_lo_que_no_cabe_se_reparte_en_varias_llamadas():
+    """Una respuesta del proveedor no da para 5.500 palabras: si no se
+    reparte, el resumen sale truncado o vacio."""
+    bloques = repartir([_palabras(4000) for _ in range(3)])
+    assert len(bloques) >= 3
+
+
+def test_ningun_bloque_pide_mas_de_lo_que_cabe():
+    for bloque in repartir([_palabras(9000), _palabras(300)]):
+        pedido = sum(len(t.split()) for t in bloque) * RATIO
+        assert pedido <= PALABRAS_POR_RESPUESTA * 1.05
+
+
+def test_un_documento_enorme_se_trocea_sin_perder_texto():
+    doc = "\n\n".join(_palabras(300) for _ in range(30))
+    trozos = [t for bloque in repartir([doc]) for t in bloque]
+    assert len(trozos) > 1
+    assert sum(len(t.split()) for t in trozos) == 9000
+
+
+def test_solo_el_primer_bloque_pone_titulo():
+    con = _con_fuentes(_palabras(4000), _palabras(4000))
+    llm = FakeLLMClient([MD, "## Mas\n\ntexto"] * 4)
+    generar_resumen(con, llm, "m", 1)
+    assert len(llm.llamadas) >= 2
+    assert "Empieza con un título de nivel 1" in llm.llamadas[0]["sistema"]
+    assert "NO pongas titulo" in llm.llamadas[1]["sistema"]
+
+
+def test_el_resumen_por_bloques_se_cose_entero():
+    con = _con_fuentes(_palabras(4000), _palabras(4000))
+    llm = FakeLLMClient(["# T\n\n## A\n\nuno", "## B\n\ndos"] * 4)
+    md = generar_resumen(con, llm, "m", 1)
+    assert "## A" in md and "## B" in md
+
+
+def test_avisa_del_avance_por_bloque():
+    con = _con_fuentes(_palabras(4000), _palabras(4000))
+    vistos = []
+    generar_resumen(
+        con,
+        FakeLLMClient(["# T\n\ntexto", "## B\n\ndos"] * 4),
+        "m",
+        1,
+        avance=lambda hechos, total: vistos.append((hechos, total)),
+    )
+    assert vistos[-1][0] == vistos[-1][1] >= 2
