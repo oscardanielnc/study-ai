@@ -574,4 +574,16 @@ window.addEventListener("DOMContentLoaded", () => {
   const m = location.hash.match(/^#tema-(\d+)$/);
   m ? vistaTema(Number(m[1])) : vistaTemas();
 });
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
+// `updateViaCache: "none"` obliga a pedir sw.js a la red. Cloudflare le pone
+// un max-age de 4 h que el navegador respetaria, y hasta ahora un despliegue
+// tardaba esas 4 h en llegar al movil. Ademas se revisa al volver a la app.
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker
+    .register("/sw.js", { updateViaCache: "none" })
+    .then((reg) => {
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) reg.update();
+      });
+    })
+    .catch(() => {});
+}
