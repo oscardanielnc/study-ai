@@ -1,7 +1,23 @@
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS usuarios (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario   TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    clave     TEXT NOT NULL,
+    creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Un token por sesion. No caducan: en el movil, volver a pedir la contrasena
+-- cada poco es lo que hace que la gente deje de abrir la app.
+CREATE TABLE IF NOT EXISTS sesiones (
+    token      TEXT PRIMARY KEY,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    creado_en  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS temas (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id     INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
     titulo         TEXT NOT NULL,
     creado_en      TEXT NOT NULL DEFAULT (datetime('now')),
     actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
@@ -74,3 +90,5 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     costo_estimado REAL NOT NULL,
     creado_en      TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_temas_usuario ON temas(usuario_id);

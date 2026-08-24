@@ -1,9 +1,9 @@
 // Cachea SOLO assets inmutables. El HTML y la API van siempre a la red: un
 // index.html cacheado servia una version vieja de la app para siempre, y los
 // despliegues no llegaban nunca al movil.
-const CACHE = "estudia-v4";
+const CACHE = "estudia-v5";
 const ARMAZON = [
-  "/styles.css?v=4", "/app.js?v=4",
+  "/styles.css?v=5", "/app.js?v=5",
   "/vendor/marked.min.js", "/vendor/katex.min.js",
   "/vendor/katex.min.css", "/vendor/auto-render.min.js",
   "/vendor/fonts.css",

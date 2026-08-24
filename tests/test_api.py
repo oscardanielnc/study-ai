@@ -31,13 +31,31 @@ def _jpeg() -> bytes:
     return buf.getvalue()
 
 
+def _entrar(c, usuario="oscar"):
+    """Deja la sesion puesta en el cliente. Ya no hay API anonima."""
+    r = c.post("/api/registro", json={"usuario": usuario, "clave": "clave123"})
+    assert r.status_code == 200, r.text
+    c.headers["Authorization"] = f"Bearer {r.json()['token']}"
+    return r.json()["token"]
+
+
 @pytest.fixture
 def cliente(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
     con = conectar(str(tmp_path / "t.db"))
     fake = FakeLLMClient(["Transcripcion", MD] + [_lote(10)] * 6)
     app = crear_app(con, fake, Settings())
-    return TestClient(app), con, fake
+    c = TestClient(app)
+    _entrar(c)
+    return c, con, fake
+
+
+@pytest.fixture
+def anonimo(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    con = conectar(str(tmp_path / "t2.db"))
+    fake = FakeLLMClient(["Transcripcion", MD] + [_lote(10)] * 6)
+    return TestClient(crear_app(con, fake, Settings()))
 
 
 def _crear_tema(c) -> int:
@@ -194,7 +212,8 @@ def test_el_job_de_un_tema_se_puede_recuperar_tras_recargar(cliente):
 
 def test_un_tema_sin_jobs_devuelve_null(cliente):
     c, con, _ = cliente
-    con.execute("INSERT INTO temas (titulo) VALUES ('suelto')")
+    # Del usuario que abrio la sesion: un tema sin dueno ya no lo ve nadie.
+    con.execute("INSERT INTO temas (usuario_id, titulo) VALUES (1, 'suelto')")
     con.commit()
     tema_id = con.execute("SELECT MAX(id) AS id FROM temas").fetchone()["id"]
     assert c.get(f"/api/temas/{tema_id}/job").json() is None
@@ -253,3 +272,85 @@ def test_el_service_worker_no_sirve_el_html_desde_cache():
     sw = pathlib.Path("static/sw.js").read_text(encoding="utf-8")
     assert "navigate" in sw, "el documento tiene que ir a la red primero"
     assert '"/index.html"' not in sw, "el HTML no puede precachearse"
+
+
+# ---------- Sesion y aislamiento entre usuarios ----------
+
+
+def test_sin_sesion_no_se_ve_nada(anonimo):
+    assert anonimo.get("/api/temas").status_code == 401
+
+
+def test_un_token_inventado_no_abre_nada(anonimo):
+    anonimo.headers["Authorization"] = "Bearer inventado"
+    assert anonimo.get("/api/temas").status_code == 401
+
+
+def test_registrarse_y_entrar_devuelven_sesion(anonimo):
+    r = anonimo.post("/api/registro", json={"usuario": "ana", "clave": "clave123"})
+    assert r.status_code == 200 and r.json()["token"]
+    r2 = anonimo.post("/api/login", json={"usuario": "ana", "clave": "clave123"})
+    assert r2.status_code == 200 and r2.json()["token"]
+
+
+def test_no_se_repite_usuario(anonimo):
+    anonimo.post("/api/registro", json={"usuario": "ana", "clave": "clave123"})
+    r = anonimo.post("/api/registro", json={"usuario": "ana", "clave": "clave123"})
+    assert r.status_code == 409
+
+
+def test_la_clave_mala_no_entra(anonimo):
+    anonimo.post("/api/registro", json={"usuario": "ana", "clave": "clave123"})
+    r = anonimo.post("/api/login", json={"usuario": "ana", "clave": "mala1234"})
+    assert r.status_code == 401
+
+
+def test_yo_dice_quien_soy_sin_401(anonimo):
+    """La pantalla de entrada consulta esto al abrir: un 401 se veria como un
+    error en vez de como 'aun no has entrado'."""
+    assert anonimo.get("/api/yo").status_code == 200
+    assert anonimo.get("/api/yo").json() is None
+
+
+def test_salir_invalida_la_sesion(cliente):
+    c, _, _ = cliente
+    assert c.post("/api/salir").status_code == 204
+    assert c.get("/api/temas").status_code == 401
+
+
+def test_cada_usuario_solo_ve_sus_temas(cliente):
+    c, con, _ = cliente
+    _crear_tema(c)
+    assert len(c.get("/api/temas").json()) == 1
+
+    _entrar(c, "ana")
+    assert c.get("/api/temas").json() == []
+
+
+def test_no_se_puede_espiar_el_tema_de_otro(cliente):
+    c, _, _ = cliente
+    tema_id = _crear_tema(c)
+    _entrar(c, "ana")
+    assert c.get(f"/api/temas/{tema_id}").status_code == 404
+    assert c.get(f"/api/temas/{tema_id}/job").status_code == 404
+    assert c.get(f"/api/temas/{tema_id}/examenes").status_code == 404
+
+
+def test_no_se_puede_borrar_el_tema_de_otro(cliente):
+    c, con, _ = cliente
+    tema_id = _crear_tema(c)
+    _entrar(c, "ana")
+    c.delete(f"/api/temas/{tema_id}")
+    assert con.execute(
+        "SELECT 1 FROM temas WHERE id=?", (tema_id,)
+    ).fetchone() is not None
+
+
+def test_no_se_puede_examinar_el_tema_de_otro(cliente):
+    c, _, _ = cliente
+    tema_id = _crear_tema(c)
+    _entrar(c, "ana")
+    r = c.post(
+        f"/api/temas/{tema_id}/examenes", json={"nivel": "facil", "cantidad": 10}
+    )
+    assert r.status_code == 404

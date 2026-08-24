@@ -34,13 +34,126 @@ const FRASES = {
   ],
 };
 
+// La sesion vive en el movil y no caduca: volver a pedir la contrasena cada
+// vez es justo lo que hace que la gente deje de abrir la app.
+const LLAVE = "estudia.token";
+
+function leerToken() {
+  try {
+    return localStorage.getItem(LLAVE) || "";
+  } catch {
+    return ""; // navegacion privada o almacenamiento bloqueado
+  }
+}
+
+function guardarToken(valor) {
+  token = valor;
+  try {
+    valor ? localStorage.setItem(LLAVE, valor) : localStorage.removeItem(LLAVE);
+  } catch {}
+}
+
+let token = leerToken();
+
+const SIN_SESION = ["/login", "/registro", "/yo"];
+
 async function api(ruta, opciones = {}) {
-  const r = await fetch(`/api${ruta}`, opciones);
+  const cabeceras = { ...(opciones.headers || {}) };
+  if (token) cabeceras.Authorization = `Bearer ${token}`;
+  const r = await fetch(`/api${ruta}`, { ...opciones, headers: cabeceras });
+
+  // Sesion revocada o borrada en el servidor: se pide entrar en vez de dejar
+  // la app rota. Login y registro contestan 401 por su cuenta y no cuentan.
+  if (r.status === 401 && !SIN_SESION.some((x) => ruta.startsWith(x))) {
+    guardarToken("");
+    vistaEntrar("Tu sesión caducó. Vuelve a entrar.");
+    throw new Error("Sesión caducada");
+  }
   if (!r.ok) {
     const cuerpo = await r.json().catch(() => ({ detail: r.statusText }));
     throw new Error(cuerpo.detail || `Error ${r.status}`);
   }
   return r.status === 204 ? null : r.json();
+}
+
+// ---------- Entrar y registrarse ----------
+
+function pintarSesion(usuario) {
+  $("#sesion").innerHTML = usuario
+    ? `<span class="quien">${usuario}</span>
+       <button class="salir" onclick="salir()">Salir</button>`
+    : "";
+}
+
+async function salir() {
+  try {
+    await api("/salir", { method: "POST" });
+  } catch {}
+  guardarToken("");
+  vistaEntrar();
+}
+
+let registrando = false;
+
+function vistaEntrar(aviso = "") {
+  location.hash = "";
+  pintarSesion("");
+  const verbo = registrando ? "Crear cuenta" : "Entrar";
+  pintar(`
+    <div class="entrar">
+      <h1>Estudia</h1>
+      <p class="lema">Tus apuntes, resumidos y convertidos en examen.</p>
+      <form id="acceso" autocomplete="on">
+        <label for="usuario">Usuario</label>
+        <input id="usuario" name="username" autocomplete="username"
+          autocapitalize="none" autocorrect="off" spellcheck="false" required>
+        <label for="clave">Contraseña</label>
+        <input id="clave" name="password" type="password" required
+          autocomplete="${registrando ? "new-password" : "current-password"}">
+        <p class="error ${aviso ? "" : "oculto"}" id="aviso">${aviso}</p>
+        <button type="submit" id="enviar">${verbo}</button>
+      </form>
+      <button class="fantasma" onclick="alternarAcceso()">${
+        registrando
+          ? "Ya tengo cuenta"
+          : "No tengo cuenta, quiero registrarme"
+      }</button>
+    </div>`);
+  $("#acceso").onsubmit = acceder;
+}
+
+function alternarAcceso() {
+  registrando = !registrando;
+  vistaEntrar();
+}
+
+async function acceder(evento) {
+  evento.preventDefault();
+  const usuario = $("#usuario").value.trim();
+  const clave = $("#clave").value;
+  const boton = $("#enviar");
+  boton.disabled = true;
+  boton.textContent = "Un momento…";
+  try {
+    const r = await api(registrando ? "/registro" : "/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usuario, clave }),
+    });
+    guardarToken(r.token);
+    pintarSesion(r.usuario);
+    vistaTemas();
+  } catch (e) {
+    // Se repinta el aviso sin perder lo escrito: reescribir la contrasena en
+    // el movil por un error de dedo es de las cosas mas molestas que hay.
+    boton.disabled = false;
+    boton.textContent = registrando ? "Crear cuenta" : "Entrar";
+    const aviso = $("#aviso");
+    if (aviso) {
+      aviso.textContent = e.message;
+      aviso.classList.remove("oculto");
+    }
+  }
 }
 
 function pintar(html, conBarra = false) {
@@ -241,6 +354,7 @@ function subir(ruta, archivos, alProgreso) {
     for (const f of archivos) fd.append("archivos", f);
     const x = new XMLHttpRequest();
     x.open("POST", `/api${ruta}`);
+    if (token) x.setRequestHeader("Authorization", `Bearer ${token}`);
     x.upload.onprogress = (e) =>
       e.lengthComputable && alProgreso(e.loaded / e.total);
     x.onload = () => {
@@ -590,7 +704,15 @@ function vistaExamen(temaId, ex) {
   pregunta();
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
+  // /yo devuelve null en vez de 401: al abrir la app no hay ningun error que
+  // ensenar, simplemente aun no se ha entrado.
+  let quien = null;
+  try {
+    quien = await api("/yo");
+  } catch {}
+  if (!quien) return vistaEntrar();
+  pintarSesion(quien.usuario);
   const m = location.hash.match(/^#tema-(\d+)$/);
   m ? vistaTema(Number(m[1])) : vistaTemas();
 });

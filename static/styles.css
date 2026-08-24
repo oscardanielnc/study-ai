@@ -311,3 +311,44 @@ button.fantasma {
 }
 .historial .fila:last-child { border-bottom: 0; }
 .historial .puntaje { font-family: "JetBrains Mono", monospace; color: var(--tinta); }
+
+/* ---------- Entrar y registrarse ---------- */
+
+/* La cabecera vuelve a tener dos lados: el nombre de la app y quien eres. */
+#sesion { display: flex; align-items: center; gap: 4px; }
+#sesion .quien {
+  font-size: 13px; color: var(--tenue); max-width: 44vw;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#sesion .salir {
+  width: auto; min-height: 32px; padding: 4px 10px; border: 0;
+  background: transparent; color: var(--tenue); font-size: 13px;
+  font-weight: 500;
+}
+#sesion .salir:active { color: var(--tinta); }
+
+.entrar { max-width: 380px; margin: 0 auto; padding: 8vh 0 40px; }
+.entrar h1 {
+  margin: 0; font-size: 34px; font-weight: 700; color: var(--tinta);
+  letter-spacing: -0.02em; text-align: center;
+}
+.entrar .lema {
+  margin: 8px 0 34px; text-align: center; color: var(--tenue); font-size: 15px;
+}
+.entrar form { display: grid; gap: 6px; }
+.entrar label {
+  font-size: 13px; font-weight: 600; color: var(--tinta); margin-top: 12px;
+}
+.entrar input {
+  font: inherit; width: 100%; min-height: 50px; padding: 12px 16px;
+  background: var(--superficie); color: var(--texto);
+  border: 1px solid var(--borde); border-radius: var(--r-boton);
+}
+.entrar input:focus {
+  outline: 0; border-color: var(--tinta);
+  box-shadow: 0 0 0 3px rgba(26, 46, 68, .12);
+}
+.entrar button[type="submit"] { margin-top: 24px; }
+.entrar .fantasma { margin-top: 12px; }
+.entrar .error { margin: 14px 0 0; font-size: 14px; }
+.oculto { display: none; }
