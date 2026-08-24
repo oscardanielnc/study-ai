@@ -25,6 +25,13 @@ def _migrar(con: sqlite3.Connection) -> None:
             "ALTER TABLE temas ADD COLUMN usuario_id INTEGER"
             " REFERENCES usuarios(id) ON DELETE CASCADE"
         )
+    if "tema_visual" not in {
+        f["name"] for f in con.execute("PRAGMA table_info(usuarios)")
+    }:
+        con.execute(
+            "ALTER TABLE usuarios ADD COLUMN tema_visual TEXT NOT NULL"
+            " DEFAULT 'papel'"
+        )
     # Despues del ALTER, nunca en schema.sql: alli se creaba antes que la
     # columna y el arranque moria con "no such column: usuario_id".
     con.execute("CREATE INDEX IF NOT EXISTS idx_temas_usuario ON temas(usuario_id)")

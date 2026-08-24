@@ -31,6 +31,16 @@ class Credenciales(BaseModel):
     clave: str
 
 
+class PerfilBody(BaseModel):
+    usuario: str | None = None
+    tema_visual: str | None = None
+
+
+class ClaveBody(BaseModel):
+    actual: str
+    nueva: str
+
+
 class ExamenBody(BaseModel):
     nivel: Nivel
     cantidad: int = Field(ge=1, le=max(CANTIDADES))
@@ -79,6 +89,12 @@ def crear_router(
         ):
             raise HTTPException(status_code=404, detail="Examen no encontrado")
 
+    def _sesion_nueva(token: str, usuario: str) -> dict:
+        fila = con.execute(
+            "SELECT tema_visual FROM usuarios WHERE usuario=?", (usuario,)
+        ).fetchone()
+        return {"token": token, "usuario": usuario, "tema_visual": fila["tema_visual"]}
+
     @r.post("/registro")
     def registro(body: Credenciales):
         try:
@@ -87,7 +103,7 @@ def crear_router(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except auth.UsuarioOcupado as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return {"token": token, "usuario": body.usuario}
+        return _sesion_nueva(token, body.usuario)
 
     @r.post("/login")
     def login(body: Credenciales):
@@ -95,14 +111,47 @@ def crear_router(
             token = auth.entrar(con, body.usuario, body.clave)
         except auth.CredencialesMalas as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
-        return {"token": token, "usuario": body.usuario}
+        return _sesion_nueva(token, body.usuario)
 
     @r.get("/yo")
     def yo_soy(token: str = Depends(_token)):
         """Quien soy segun el token guardado en el movil. Devuelve null en vez
         de 401 para que la pantalla de entrada no parezca un error."""
         fila = auth.usuario_de_token(con, token)
-        return {"usuario": fila["usuario"]} if fila else None
+        if fila is None:
+            return None
+        return {"usuario": fila["usuario"], "tema_visual": fila["tema_visual"]}
+
+    @r.patch("/perfil")
+    def editar_perfil(body: PerfilBody, yo: int = Depends(_quien)):
+        """Nombre y tema visual. La clave va aparte porque pide la de siempre."""
+        try:
+            if body.usuario is not None:
+                auth.cambiar_usuario(con, yo, body.usuario.strip())
+            if body.tema_visual is not None:
+                auth.cambiar_tema(con, yo, body.tema_visual)
+        except auth.DatosInvalidos as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except auth.UsuarioOcupado as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        fila = con.execute(
+            "SELECT usuario, tema_visual FROM usuarios WHERE id=?", (yo,)
+        ).fetchone()
+        return {"usuario": fila["usuario"], "tema_visual": fila["tema_visual"]}
+
+    @r.post("/perfil/clave", status_code=204)
+    def cambiar_la_clave(
+        body: ClaveBody, yo: int = Depends(_quien), token: str = Depends(_token)
+    ):
+        try:
+            auth.cambiar_clave(con, yo, body.actual, body.nueva)
+        except auth.CredencialesMalas as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        except auth.DatosInvalidos as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # La sesion de aqui se conserva: cambiar la clave no puede echarte del
+        # movil en el que la acabas de cambiar.
+        auth.cerrar_otras_sesiones(con, yo, token)
 
     @r.post("/salir", status_code=204)
     def cerrar(token: str = Depends(_token)):

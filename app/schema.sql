@@ -3,8 +3,9 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS usuarios (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     usuario   TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    clave     TEXT NOT NULL,
-    creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+    clave       TEXT NOT NULL,
+    tema_visual TEXT NOT NULL DEFAULT 'papel',
+    creado_en   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Un token por sesion. No caducan: en el movil, volver a pedir la contrasena

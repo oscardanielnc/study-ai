@@ -37,6 +37,34 @@ const FRASES = {
 // La sesion vive en el movil y no caduca: volver a pedir la contrasena cada
 // vez es justo lo que hace que la gente deje de abrir la app.
 const LLAVE = "estudia.token";
+const LLAVE_TEMA = "estudia.tema";
+
+// Las mismas cuatro que acepta el servidor. El color es el del papel y el de
+// la tinta, para que el boton se parezca a lo que va a pasar.
+const TEMAS = [
+  ["papel", "Papel", "#fbf9f4", "#1a2e44"],
+  ["noche", "Noche", "#12171f", "#cfe0f5"],
+  ["bosque", "Bosque", "#f4f7f1", "#1f4030"],
+  ["atardecer", "Atardecer", "#fdf6f0", "#6d2f2a"],
+];
+
+/** Se aplica antes de pedir nada al servidor: si esperaramos a /yo, al abrir
+ *  la app se veria un parpadeo del tema por defecto. */
+function aplicarTema(nombre) {
+  const tema = TEMAS.find(([id]) => id === nombre) ? nombre : "papel";
+  document.documentElement.setAttribute("data-tema", tema);
+  const color = TEMAS.find(([id]) => id === tema)[2];
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", color); // barra del sistema en Android
+  try {
+    localStorage.setItem(LLAVE_TEMA, tema);
+  } catch {}
+  return tema;
+}
+
+try {
+  aplicarTema(localStorage.getItem(LLAVE_TEMA) || "papel");
+} catch {}
 
 function leerToken() {
   try {
@@ -78,11 +106,32 @@ async function api(ruta, opciones = {}) {
 
 // ---------- Entrar y registrarse ----------
 
+// Iconos en linea: una peticion menos y heredan el color del tema.
+const ICONO_PERSONA = `<svg viewBox="0 0 24 24" aria-hidden="true">
+  <circle cx="12" cy="8" r="3.6"/>
+  <path d="M4.8 20c0-3.6 3.2-5.8 7.2-5.8s7.2 2.2 7.2 5.8"/></svg>`;
+const ICONO_SALIDA = `<svg viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M14.5 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8"/>
+  <path d="M17 8.5 20.5 12 17 15.5"/><path d="M20 12h-9"/></svg>`;
+
 function pintarSesion(usuario) {
   $("#sesion").innerHTML = usuario
-    ? `<span class="quien">${usuario}</span>
-       <button class="salir" onclick="salir()">Salir</button>`
+    ? `<button class="quien" onclick="vistaPerfil()" aria-label="Ajustes de perfil">
+         ${ICONO_PERSONA}<span>${usuario}</span>
+       </button>
+       <button class="salir" onclick="pedirSalir()">
+         ${ICONO_SALIDA}<span>Salir</span>
+       </button>`
     : "";
+}
+
+function pedirSalir() {
+  confirmar(
+    `\u00bfCerrar sesi\u00f3n?<br>
+     <small>Tendr\u00e1s que volver a escribir tu usuario y tu contrase\u00f1a.</small>`,
+    salir,
+    "Salir"
+  );
 }
 
 async function salir() {
@@ -141,6 +190,7 @@ async function acceder(evento) {
       body: JSON.stringify({ usuario, clave }),
     });
     guardarToken(r.token);
+    if (r.tema_visual) aplicarTema(r.tema_visual);
     pintarSesion(r.usuario);
     vistaTemas();
   } catch (e) {
@@ -199,12 +249,12 @@ function avanzar(fraccion, detalle = "") {
 
 /** Confirmacion propia: `confirm()` del navegador congela la app dentro del
  *  APK y se ve como un aviso del sistema, no como parte de Estudia. */
-function confirmar(html, alSi) {
+function confirmar(html, alSi, verbo = "Eliminar") {
   const fondo = document.createElement("div");
   fondo.className = "modal";
   fondo.innerHTML = `<div class="hoja">
       <div class="dice">${html}</div>
-      <button class="peligro" id="si">Eliminar</button>
+      <button class="peligro" id="si">${verbo}</button>
       <button class="secundario" id="no">Cancelar</button>
     </div>`;
   document.body.appendChild(fondo);
@@ -242,6 +292,122 @@ function renderizar(el) {
     ],
     throwOnError: false,
   });
+}
+
+// ---------- Perfil ----------
+
+/** Un solo sitio para el nombre, la contrasena y el aspecto. Se llega desde el
+ *  icono de la cabecera. */
+function vistaPerfil() {
+  const actual = document.documentElement.getAttribute("data-tema") || "papel";
+  const quien = $("#sesion .quien span");
+  pintar(`
+    <button class="volver" onclick="vistaTemas()">\u2190 Temas</button>
+    <h1 class="titulo-pantalla">Tu perfil</h1>
+
+    <form class="grupo" id="f-nombre">
+      <h2>Nombre de usuario</h2>
+      <input id="p-usuario" name="username" autocomplete="username"
+        autocapitalize="none" autocorrect="off" spellcheck="false"
+        value="${quien ? quien.textContent : ""}" required>
+      <p class="dicho" id="d-nombre"></p>
+      <button type="submit">Guardar nombre</button>
+    </form>
+
+    <form class="grupo" id="f-clave">
+      <h2>Contrase\u00f1a</h2>
+      <label for="p-actual">Contrase\u00f1a actual</label>
+      <input id="p-actual" type="password" autocomplete="current-password" required>
+      <label for="p-nueva">Contrase\u00f1a nueva</label>
+      <input id="p-nueva" type="password" autocomplete="new-password" required>
+      <p class="dicho" id="d-clave"></p>
+      <button type="submit">Cambiar contrase\u00f1a</button>
+    </form>
+
+    <div class="grupo">
+      <h2>Aspecto</h2>
+      <div class="paletas">
+        ${TEMAS.map(
+          ([id, nombre, papel, tinta]) => `
+          <button class="paleta" data-tema-id="${id}"
+            aria-pressed="${id === actual}"
+            style="background:${papel};color:${tinta};border-color:${tinta}33">
+            <span class="muestra" style="background:${tinta}"></span>
+            <span>${nombre}</span>
+          </button>`
+        ).join("")}
+      </div>
+      <p class="dicho" id="d-tema"></p>
+    </div>`);
+
+  $("#f-nombre").onsubmit = guardarNombre;
+  $("#f-clave").onsubmit = guardarClave;
+  document.querySelectorAll(".paleta").forEach((b) => {
+    b.onclick = () => elegirTema(b.dataset.temaId);
+  });
+}
+
+/** Un aviso junto al campo que lo provoca, no una pantalla de error: en
+ *  ajustes se cambian varias cosas seguidas y no hay que perder el sitio. */
+function decir(id, mensaje, mal = false) {
+  const p = $(id);
+  if (!p) return;
+  p.textContent = mensaje;
+  p.className = `dicho ${mal ? "mal" : "bien"}`;
+}
+
+async function guardarNombre(evento) {
+  evento.preventDefault();
+  const usuario = $("#p-usuario").value.trim();
+  try {
+    const r = await api("/perfil", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usuario }),
+    });
+    pintarSesion(r.usuario);
+    decir("#d-nombre", "Guardado.");
+  } catch (e) {
+    decir("#d-nombre", e.message, true);
+  }
+}
+
+async function guardarClave(evento) {
+  evento.preventDefault();
+  try {
+    await api("/perfil/clave", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        actual: $("#p-actual").value,
+        nueva: $("#p-nueva").value,
+      }),
+    });
+    $("#f-clave").reset();
+    decir("#d-clave", "Contrase\u00f1a cambiada. Las sesiones de otros"
+      + " dispositivos se han cerrado.");
+  } catch (e) {
+    decir("#d-clave", e.message, true);
+  }
+}
+
+async function elegirTema(id) {
+  // Se aplica ya y se guarda despues: el color tiene que cambiar al tocarlo,
+  // no cuando conteste el servidor.
+  aplicarTema(id);
+  document
+    .querySelectorAll(".paleta")
+    .forEach((b) => b.setAttribute("aria-pressed", b.dataset.temaId === id));
+  try {
+    await api("/perfil", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tema_visual: id }),
+    });
+    decir("#d-tema", "Te acompa\u00f1ar\u00e1 en cualquier dispositivo.");
+  } catch (e) {
+    decir("#d-tema", `Se ve as\u00ed en este m\u00f3vil, pero no se pudo guardar: ${e.message}`, true);
+  }
 }
 
 // ---------- Lista de temas ----------
@@ -417,6 +583,10 @@ function nuevoTema() {
 const REINTENTOS = 60; // ~5 min de red caida antes de rendirse
 
 function seguirJob(jobId, tipo, titulo, alTerminar, alFallar) {
+  // Las preguntas no se generan de una en una: el modelo devuelve el lote
+  // entero de golpe. Un "0 / 10" clavado tres minutos solo confunde, asi que
+  // ahi no hay contador: el titulo ya dice cuantas y de que nivel.
+  const conContador = tipo !== "generar_preguntas";
   cargando(titulo, "", FRASES[tipo]);
   let fallos = 0;
   const tic = async () => {
@@ -439,7 +609,7 @@ function seguirJob(jobId, tipo, titulo, alTerminar, alFallar) {
     }
     avanzar(
       j.progreso_total ? j.progreso_actual / j.progreso_total : 0,
-      `${j.progreso_actual} / ${j.progreso_total}`
+      conContador ? `${j.progreso_actual} / ${j.progreso_total}` : ""
     );
     if (j.estado === "completado") return alTerminar();
     if (j.estado === "fallido") {
@@ -604,10 +774,11 @@ async function iniciarExamen(temaId) {
   if (r.examen_id) return vistaExamen(temaId, r);
 
   const plural = r.faltan === 1 ? "" : "s";
+  const nivel = (NIVELES.find(([v]) => v === elegido.nivel) || [, ""])[1];
   seguirJob(
     r.job_id,
     "generar_preguntas",
-    `Preparando ${r.faltan} pregunta${plural} nueva${plural}…`,
+    `Formulando ${r.faltan} pregunta${plural} de nivel ${nivel.toLowerCase()}…`,
     async () => {
       try {
         vistaExamen(temaId, await api(`/temas/${temaId}/examenes`, peticion));
@@ -712,6 +883,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     quien = await api("/yo");
   } catch {}
   if (!quien) return vistaEntrar();
+  aplicarTema(quien.tema_visual);
   pintarSesion(quien.usuario);
   const m = location.hash.match(/^#tema-(\d+)$/);
   m ? vistaTema(Number(m[1])) : vistaTemas();

@@ -354,3 +354,52 @@ def test_no_se_puede_examinar_el_tema_de_otro(cliente):
         f"/api/temas/{tema_id}/examenes", json={"nivel": "facil", "cantidad": 10}
     )
     assert r.status_code == 404
+
+
+# ---------- Perfil ----------
+
+
+def test_el_perfil_devuelve_el_tema_visual(cliente):
+    c, _, _ = cliente
+    assert c.get("/api/yo").json()["tema_visual"] == "papel"
+
+
+def test_cambiar_el_nombre_desde_la_api(cliente):
+    c, _, _ = cliente
+    r = c.patch("/api/perfil", json={"usuario": "oscar.navarro"})
+    assert r.status_code == 200
+    assert c.get("/api/yo").json()["usuario"] == "oscar.navarro"
+
+
+def test_el_nombre_ocupado_da_409(cliente):
+    c, _, _ = cliente
+    _entrar(c, "ana")
+    assert c.patch("/api/perfil", json={"usuario": "oscar"}).status_code == 409
+
+
+def test_cambiar_el_tema_visual_desde_la_api(cliente):
+    c, _, _ = cliente
+    assert c.patch("/api/perfil", json={"tema_visual": "noche"}).status_code == 200
+    assert c.get("/api/yo").json()["tema_visual"] == "noche"
+
+
+def test_un_tema_visual_inventado_da_400(cliente):
+    c, _, _ = cliente
+    assert c.patch("/api/perfil", json={"tema_visual": "arcoiris"}).status_code == 400
+
+
+def test_cambiar_la_clave_conserva_esta_sesion(cliente):
+    c, _, _ = cliente
+    r = c.post("/api/perfil/clave", json={"actual": "clave123", "nueva": "nueva1234"})
+    assert r.status_code == 204
+    assert c.get("/api/temas").status_code == 200
+
+
+def test_la_clave_actual_equivocada_da_401(cliente):
+    c, _, _ = cliente
+    r = c.post("/api/perfil/clave", json={"actual": "nope1234", "nueva": "nueva1234"})
+    assert r.status_code == 401
+
+
+def test_el_perfil_necesita_sesion(anonimo):
+    assert anonimo.patch("/api/perfil", json={"tema_visual": "noche"}).status_code == 401

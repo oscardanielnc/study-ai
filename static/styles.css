@@ -13,10 +13,67 @@
   --mal-fondo: #fceeee;
   --mal-borde: #d99a9a;
   --mal-tinta: #9c3b3b;
+  --sobre-tinta: #ffffff;
 
   --r-boton: 12px;
   --r-tarjeta: 16px;
   --barra-alto: 84px;
+}
+
+
+/* ---------- Temas visuales ---------- */
+/* El atributo lo pone la app en <html> antes de pintar nada, para que no se
+   vea un parpadeo del tema por defecto al abrir. */
+
+html[data-tema="noche"] {
+  --papel: #12171f;
+  --superficie: #1a222d;
+  --hundido: #161d26;
+  --borde: #2b3644;
+  --tinta: #cfe0f5;
+  --texto: #dce4ee;
+  --tenue: #8b98a8;
+  --sobre-tinta: #0f141b;
+  --ok-fondo: #16281d;
+  --ok-borde: #3f7a55;
+  --ok-tinta: #7fce9c;
+  --mal-fondo: #2b1a1c;
+  --mal-borde: #7d4046;
+  --mal-tinta: #e78f96;
+}
+
+html[data-tema="bosque"] {
+  --papel: #f4f7f1;
+  --superficie: #ffffff;
+  --hundido: #e9efe4;
+  --borde: #d5e0cc;
+  --tinta: #1f4030;
+  --texto: #2b332c;
+  --tenue: #64715f;
+  --sobre-tinta: #ffffff;
+  --ok-fondo: #e8f4e9;
+  --ok-borde: #74ab7f;
+  --ok-tinta: #2c6b3d;
+  --mal-fondo: #fbeeea;
+  --mal-borde: #d69a8c;
+  --mal-tinta: #94402f;
+}
+
+html[data-tema="atardecer"] {
+  --papel: #fdf6f0;
+  --superficie: #ffffff;
+  --hundido: #f7ebe2;
+  --borde: #ecd9c9;
+  --tinta: #6d2f2a;
+  --texto: #3a2b26;
+  --tenue: #7d675c;
+  --sobre-tinta: #fffaf6;
+  --ok-fondo: #eff5ec;
+  --ok-borde: #93b183;
+  --ok-tinta: #46703a;
+  --mal-fondo: #fbe9e6;
+  --mal-borde: #d59a91;
+  --mal-tinta: #9c3b3b;
 }
 
 * { box-sizing: border-box; }
@@ -57,7 +114,7 @@ body {
 button {
   font: inherit; cursor: pointer; border-radius: var(--r-boton);
   min-height: 48px; padding: 12px 20px; width: 100%;
-  border: 1px solid var(--tinta); background: var(--tinta); color: #fff;
+  border: 1px solid var(--tinta); background: var(--tinta); color: var(--sobre-tinta);
   font-weight: 600; transition: opacity .15s, background .15s;
 }
 button:active { opacity: .85; }
@@ -215,7 +272,7 @@ button.fantasma {
 .hoja .dice b { color: var(--tinta); }
 .hoja .dice small { color: var(--tenue); font-size: 14px; }
 .hoja .peligro {
-  background: var(--mal-tinta); border-color: var(--mal-tinta); color: #fff;
+  background: var(--mal-tinta); border-color: var(--mal-tinta); color: var(--sobre-tinta);
 }
 @keyframes subir { from { transform: translateY(16px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .hoja { animation: none; } }
@@ -242,7 +299,7 @@ button.fantasma {
   border: 1px solid var(--borde); font-weight: 500;
 }
 .elegible[aria-pressed="true"] {
-  background: var(--tinta); color: #fff; border-color: var(--tinta); font-weight: 600;
+  background: var(--tinta); color: var(--sobre-tinta); border-color: var(--tinta); font-weight: 600;
 }
 .aviso { color: var(--tenue); font-size: 13px; text-align: center; margin: 4px 0 16px; }
 
@@ -312,20 +369,72 @@ button.fantasma {
 .historial .fila:last-child { border-bottom: 0; }
 .historial .puntaje { font-family: "JetBrains Mono", monospace; color: var(--tinta); }
 
-/* ---------- Entrar y registrarse ---------- */
+/* ---------- Cabecera: quien eres y como salir ---------- */
 
-/* La cabecera vuelve a tener dos lados: el nombre de la app y quien eres. */
-#sesion { display: flex; align-items: center; gap: 4px; }
-#sesion .quien {
-  font-size: 13px; color: var(--tenue); max-width: 44vw;
+#sesion { display: flex; align-items: center; gap: 2px; }
+#sesion svg {
+  width: 17px; height: 17px; flex: 0 0 auto;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+#sesion button {
+  display: flex; align-items: center; gap: 6px;
+  width: auto; min-height: 36px; padding: 6px 10px; border: 0;
+  background: transparent; font-size: 13px; font-weight: 500;
+  border-radius: 999px;
+}
+
+/* El nombre lleva a los ajustes; va en el color del texto normal. */
+#sesion .quien { color: var(--tenue); max-width: 40vw; }
+#sesion .quien span {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-#sesion .salir {
-  width: auto; min-height: 32px; padding: 4px 10px; border: 0;
-  background: transparent; color: var(--tenue); font-size: 13px;
-  font-weight: 500;
+#sesion .quien:active { background: var(--hundido); color: var(--tinta); }
+
+/* Salir es lo unico que se pierde de un toque: se distingue en rojo para que
+   nadie lo confunda con el nombre que tiene al lado. */
+#sesion .salir { color: var(--mal-tinta); }
+#sesion .salir:active { background: var(--mal-fondo); }
+
+/* ---------- Perfil ---------- */
+
+.titulo-pantalla {
+  font-size: 26px; font-weight: 700; color: var(--tinta);
+  letter-spacing: -0.02em; margin: 4px 0 20px;
 }
-#sesion .salir:active { color: var(--tinta); }
+.grupo label {
+  display: block; font-size: 13px; font-weight: 600; color: var(--tinta);
+  margin: 14px 0 6px;
+}
+.grupo input {
+  font: inherit; width: 100%; min-height: 48px; padding: 12px 16px;
+  background: var(--papel); color: var(--texto);
+  border: 1px solid var(--borde); border-radius: var(--r-boton);
+}
+.grupo input:focus {
+  outline: 0; border-color: var(--tinta);
+  box-shadow: 0 0 0 3px rgba(127, 127, 127, .18);
+}
+.grupo button[type="submit"] { margin-top: 16px; }
+
+.dicho { font-size: 13px; margin: 12px 0 0; min-height: 1px; }
+.dicho.bien { color: var(--ok-tinta); }
+.dicho.mal { color: var(--mal-tinta); }
+
+.paletas { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.paleta {
+  display: flex; align-items: center; gap: 10px; justify-content: flex-start;
+  border: 1px solid; font-weight: 500; font-size: 15px; text-align: left;
+}
+/* La marca es un anillo grueso: el color del boton ya es el del tema, asi que
+   rellenarlo mas no distinguiria nada. */
+.paleta[aria-pressed="true"] { box-shadow: 0 0 0 2px currentColor inset; }
+.paleta .muestra {
+  width: 18px; height: 18px; border-radius: 50%; flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .12);
+}
+
+/* ---------- Entrar y registrarse ---------- */
 
 .entrar { max-width: 380px; margin: 0 auto; padding: 8vh 0 40px; }
 .entrar h1 {

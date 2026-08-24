@@ -121,7 +121,64 @@ def usuario_de_token(con: sqlite3.Connection, token: str) -> sqlite3.Row | None:
     if not token:
         return None
     return con.execute(
-        "SELECT u.id, u.usuario FROM sesiones s JOIN usuarios u ON u.id=s.usuario_id"
+        "SELECT u.id, u.usuario, u.tema_visual FROM sesiones s"
+        " JOIN usuarios u ON u.id=s.usuario_id"
         " WHERE s.token=?",
         (token,),
     ).fetchone()
+
+
+# Paletas que el usuario puede elegir. Vive aqui y no solo en el CSS para que
+# nadie se guarde un tema inventado en la base.
+TEMAS_VISUALES = ("papel", "noche", "bosque", "atardecer")
+
+
+def cambiar_usuario(con: sqlite3.Connection, usuario_id: int, nuevo: str) -> str:
+    if not USUARIO_VALIDO.match(nuevo or ""):
+        raise DatosInvalidos(
+            "El usuario necesita entre 3 y 32 caracteres, sin espacios"
+            " (letras, numeros, punto, guion o guion bajo)."
+        )
+    try:
+        con.execute("UPDATE usuarios SET usuario=? WHERE id=?", (nuevo, usuario_id))
+    except sqlite3.IntegrityError as exc:
+        raise UsuarioOcupado("Ese usuario ya existe.") from exc
+    con.commit()
+    return nuevo
+
+
+def cambiar_clave(
+    con: sqlite3.Connection, usuario_id: int, actual: str, nueva: str
+) -> None:
+    """Pide la clave de siempre aunque la sesion ya este abierta: un movil
+    desbloqueado un momento no deberia bastar para quedarse con la cuenta."""
+    fila = con.execute(
+        "SELECT clave FROM usuarios WHERE id=?", (usuario_id,)
+    ).fetchone()
+    if fila is None or not comprobar(actual, fila["clave"]):
+        raise CredencialesMalas("La contrasena actual no es correcta.")
+    if len(nueva or "") < CLAVE_MINIMA:
+        raise DatosInvalidos(
+            f"La contrasena necesita al menos {CLAVE_MINIMA} caracteres."
+        )
+    con.execute("UPDATE usuarios SET clave=? WHERE id=?", (cifrar(nueva), usuario_id))
+    con.commit()
+
+
+def cerrar_otras_sesiones(
+    con: sqlite3.Connection, usuario_id: int, conservar: str
+) -> None:
+    """Al cambiar la clave, las sesiones abiertas en otros sitios dejan de
+    valer. La de aqui se conserva para no echar a quien acaba de cambiarla."""
+    con.execute(
+        "DELETE FROM sesiones WHERE usuario_id=? AND token!=?", (usuario_id, conservar)
+    )
+    con.commit()
+
+
+def cambiar_tema(con: sqlite3.Connection, usuario_id: int, tema: str) -> str:
+    if tema not in TEMAS_VISUALES:
+        raise DatosInvalidos("Ese tema visual no existe.")
+    con.execute("UPDATE usuarios SET tema_visual=? WHERE id=?", (tema, usuario_id))
+    con.commit()
+    return tema
