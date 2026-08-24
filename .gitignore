@@ -14,6 +14,7 @@ try/
 # que es la fuente; el resto lo regenera `bubblewrap update`.
 android/*
 !android/twa-manifest.json
+!android/firmar.ps1
 # La clave de firma NUNCA entra en git: quien la tenga puede publicar
 # actualizaciones de la app en nombre de Oscar.
 *.keystore
