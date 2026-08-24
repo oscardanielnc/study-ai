@@ -160,6 +160,21 @@ async function vistaTemas() {
     }`);
 }
 
+/** Un tema que no llego a tener resumen no se guarda: una tarjeta
+ *  "Procesando..." cuyo unico contenido es "Sin resumen" no le sirve a nadie.
+ *  Se cuenta el error y se tira. */
+async function descartarTema(id, error) {
+  location.hash = "";
+  try {
+    await api(`/temas/${id}`, { method: "DELETE" });
+  } catch {}
+  fallo(
+    `No se pudieron procesar tus apuntes, así que no se guardó el tema.
+     Vuelve a intentarlo.<br><small>${error}</small>`,
+    "vistaTemas()"
+  );
+}
+
 /** Borrar es irreversible y la papelera esta pegada a la tarjeta: siempre
  *  se pregunta, y se dice exactamente que se lleva por delante. */
 function pedirBorrar(id) {
@@ -268,8 +283,12 @@ function nuevoTema() {
       // El hash entra ya: si el movil descarta la pestana, al volver se
       // reengancha al proceso en vez de perderlo.
       location.hash = `tema-${tema_id}`;
-      seguirJob(job_id, "transcribir", "Procesando tus apuntes…", () =>
-        vistaTema(tema_id)
+      seguirJob(
+        job_id,
+        "transcribir",
+        "Procesando tus apuntes…",
+        () => vistaTema(tema_id),
+        (error) => descartarTema(tema_id, error)
       );
     } catch (e) {
       fallo(e.message, "vistaTemas()");
@@ -310,9 +329,9 @@ function seguirJob(jobId, tipo, titulo, alTerminar, alFallar) {
     );
     if (j.estado === "completado") return alTerminar();
     if (j.estado === "fallido") {
-      pintar(`<p class="error">Falló: ${j.error}</p>
-        <button class="secundario" onclick="vistaTemas()">← Volver</button>`);
-      return alFallar ? alFallar() : null;
+      return alFallar
+        ? alFallar(j.error)
+        : fallo(`No se pudo terminar.<br><small>${j.error}</small>`, "vistaTemas()");
     }
     temporizador = setTimeout(tic, 2000);
   };
@@ -359,7 +378,8 @@ async function vistaTema(id) {
       job.tipo === "generar_preguntas"
         ? "Preparando tus preguntas…"
         : "Procesando tus apuntes…",
-      () => vistaTema(id)
+      () => vistaTema(id),
+      job.tipo === "transcribir" ? (error) => descartarTema(id, error) : undefined
     );
   }
 

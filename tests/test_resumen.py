@@ -3,8 +3,9 @@ import re
 import pytest
 
 from app.db import conectar
+from app.llm.client import LLMError
 from app.llm.fake import FakeLLMClient
-from app.llm.prompts import prompt_resumen
+from app.llm.prompts import TECHO_PALABRAS, prompt_resumen
 from app.services.resumen import extraer_titulo, generar_resumen
 
 MD = "# Ley de Ohm\n\n## Enunciado\n\n$V = IR$\n\n## Puntos clave\n\n- Uno\n"
@@ -93,3 +94,55 @@ def test_el_cuerpo_numera_los_documentos(con):
     usuario = llm.llamadas[0]["usuario"]
     assert "## Documento 1 de 2" in usuario
     assert "## Documento 2 de 2" in usuario
+
+
+def test_el_resumen_no_razona():
+    """Con el razonamiento activo el modelo gasto los 8000 tokens pensando y
+    devolvio texto vacio (finish_reason=length). Resumir es reescribir."""
+    con = _con_fuentes()
+    llm = FakeLLMClient([MD])
+    generar_resumen(con, llm, "m", 1)
+    assert llm.llamadas[0]["sin_razonamiento"] is True
+
+
+def test_el_objetivo_no_pasa_de_lo_que_cabe_en_una_respuesta():
+    assert _objetivo(prompt_resumen(20, 100000)) <= TECHO_PALABRAS
+
+
+def test_reintenta_mas_corto_si_el_modelo_se_queda_sin_presupuesto():
+    """Cinco fotos transcritas bien no pueden tirarse a la basura porque el
+    resumen se paso de largo: se vuelve a pedir mas breve."""
+    con = _con_fuentes()
+    llm = _LlmQueFallaLaPrimera(MD)
+    generar_resumen(con, llm, "m", 1)
+    assert len(llm.llamadas) == 2
+    assert _objetivo(llm.llamadas[1]["sistema"]) < _objetivo(llm.llamadas[0]["sistema"])
+
+
+class _LlmQueFallaLaPrimera(FakeLLMClient):
+    def __init__(self, respuesta):
+        super().__init__([respuesta])
+        self._fallado = False
+
+    def completar(self, **kw):
+        if not self._fallado:
+            self._fallado = True
+            self.llamadas.append(kw)
+            raise LLMError("El modelo devolvio una respuesta vacia")
+        return super().completar(**kw)
+
+
+def _con_fuentes():
+    from app.db import conectar
+    import tempfile, pathlib as _p
+    d = tempfile.mkdtemp()
+    con = conectar(str(_p.Path(d) / "t.db"))
+    con.execute("INSERT INTO temas (id, titulo) VALUES (1, 'Sin titulo')")
+    for i, t in enumerate(["Parte A " * 200, "Parte B " * 200]):
+        con.execute(
+            "INSERT INTO fuentes (tema_id, nombre_original, tipo, transcripcion)"
+            " VALUES (1, ?, 'imagen', ?)",
+            (f"f{i}.jpg", t),
+        )
+    con.commit()
+    return con

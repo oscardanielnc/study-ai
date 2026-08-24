@@ -24,6 +24,8 @@ class FakeLLMClient:
                 "sistema": sistema,
                 "usuario": usuario,
                 "n_imagenes": len(imagenes or []),
+                "max_tokens": max_tokens,
+                "sin_razonamiento": sin_razonamiento,
             }
         )
         if not self._respuestas:

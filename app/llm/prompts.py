@@ -36,12 +36,22 @@ Conserva las marcas [?] y los bloques [DIAGRAMA: ...] que encuentres.
 Devuelve solo el Markdown."""
 
 
-def prompt_resumen(n_documentos: int, palabras_entrada: int) -> str:
+# Techo de una sola respuesta del proveedor. Pedir mas no da mas: da un
+# finish_reason=length y texto vacio, que es como se perdio un tema entero de
+# cinco fotos ya transcritas.
+TECHO_PALABRAS = 2500
+
+
+def objetivo_palabras(palabras_entrada: int) -> int:
     """Sin un objetivo explicito el modelo escribe siempre lo mismo: cinco
     fotos daban un resumen igual de largo que una sola, comprimiendo cinco
     veces mas y tirando el 80% de lo estudiable. La extension tiene que
-    seguir a la entrada."""
-    objetivo = max(300, round(palabras_entrada * 0.7 / 50) * 50)
+    seguir a la entrada, pero sin pasarse de lo que cabe en una respuesta."""
+    return min(TECHO_PALABRAS, max(300, round(palabras_entrada * 0.7 / 50) * 50))
+
+
+def prompt_resumen(n_documentos: int, palabras_entrada: int) -> str:
+    objetivo = objetivo_palabras(palabras_entrada)
     return RESUMEN.format(
         n=n_documentos,
         s="" if n_documentos == 1 else "s",

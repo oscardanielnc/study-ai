@@ -38,6 +38,22 @@ def marcar_interrumpidos(con: sqlite3.Connection) -> None:
     con.commit()
 
 
+def limpiar_basura(con: sqlite3.Connection) -> None:
+    """Tira los temas que nunca llegaron a tener resumen.
+
+    Un fallo a mitad dejaba una tarjeta 'Procesando...' cuyo unico contenido
+    era 'Sin resumen'. Eso no es un tema a medias, es basura: el error ya se
+    le conto al usuario y las transcripciones sueltas no le sirven de nada.
+    Se respeta lo que aun se esta procesando.
+    """
+    con.execute(
+        "DELETE FROM temas WHERE id NOT IN (SELECT tema_id FROM resumen)"
+        " AND id NOT IN (SELECT tema_id FROM jobs"
+        " WHERE estado IN ('pendiente','en_curso'))"
+    )
+    con.commit()
+
+
 def _guardar_fuente(
     con: sqlite3.Connection, tema_id: int, nombre: str, tipo: str, texto: str
 ) -> None:

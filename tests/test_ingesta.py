@@ -10,6 +10,7 @@ from app.llm.fake import FakeLLMClient
 from app.services.ingesta import (
     Archivo,
     crear_job,
+    limpiar_basura,
     marcar_interrumpidos,
     procesar,
 )
@@ -116,3 +117,34 @@ def test_al_arrancar_los_jobs_a_medias_se_marcan_fallidos(con):
     assert estados[b][0] == "fallido"
     assert "interrump" in estados[b][1].lower()
     assert estados[hecho][0] == "completado"
+
+
+def test_al_arrancar_se_tiran_los_temas_que_nunca_llegaron_a_resumen(tmp_path):
+    """Un fallo dejaba una tarjeta 'Procesando...' cuyo unico contenido era
+    'Sin resumen'. Eso no es un tema, es basura."""
+    con = conectar(str(tmp_path / "t.db"))
+    con.execute("INSERT INTO temas (id, titulo) VALUES (1, 'Procesando...')")
+    con.execute("INSERT INTO temas (id, titulo) VALUES (2, 'Bueno')")
+    con.execute(
+        "INSERT INTO resumen (tema_id, contenido_md, modelo) VALUES (2, '# X', 'm')"
+    )
+    con.commit()
+
+    limpiar_basura(con)
+
+    quedan = [f["id"] for f in con.execute("SELECT id FROM temas ORDER BY id")]
+    assert quedan == [2]
+
+
+def test_no_se_tira_un_tema_que_todavia_se_esta_procesando(tmp_path):
+    con = conectar(str(tmp_path / "t.db"))
+    con.execute("INSERT INTO temas (id, titulo) VALUES (1, 'Procesando...')")
+    con.execute(
+        "INSERT INTO jobs (tema_id, tipo, estado, progreso_total)"
+        " VALUES (1, 'transcribir', 'en_curso', 3)"
+    )
+    con.commit()
+
+    limpiar_basura(con)
+
+    assert con.execute("SELECT COUNT(*) n FROM temas").fetchone()["n"] == 1

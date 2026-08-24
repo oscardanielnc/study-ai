@@ -1,9 +1,36 @@
 import re
 import sqlite3
 
-from app.llm.client import LLMClient
+from app.llm.client import LLMClient, LLMError
 from app.llm.contabilidad import registrar
 from app.llm.prompts import prompt_resumen
+
+
+# Tope del proveedor por respuesta. La extension la manda el prompt, no esto:
+# recortar max_tokens no acorta el resumen, lo trunca.
+MAX_TOKENS = 8000
+
+
+def _pedir(llm: LLMClient, modelo: str, cuerpo: str, n_docs: int, palabras: int):
+    """Pide el resumen, y si el modelo se queda sin presupuesto lo vuelve a
+    pedir mas breve.
+
+    Resumir no es razonar: con el razonamiento activo el modelo se gasto los
+    8000 tokens pensando y devolvio texto vacio (finish_reason=length),
+    tirando a la basura cinco transcripciones que habian salido perfectas.
+    """
+    for intento in (palabras, palabras // 2, palabras // 4):
+        try:
+            return llm.completar(
+                modelo=modelo,
+                sistema=prompt_resumen(n_docs, intento),
+                usuario=cuerpo,
+                max_tokens=MAX_TOKENS,
+                sin_razonamiento=True,
+            )
+        except LLMError as exc:
+            ultimo = exc
+    raise ultimo
 
 
 def extraer_titulo(md: str) -> str | None:
@@ -31,15 +58,7 @@ def generar_resumen(
         for i, f in enumerate(filas, start=1)
     )
     palabras = len(cuerpo.split())
-    resultado = llm.completar(
-        modelo=modelo,
-        sistema=prompt_resumen(len(filas), palabras),
-        usuario=cuerpo,
-        # El presupuesto de salida sigue al objetivo del prompt: con el tope
-        # fijo de 8000 el modelo se cortaba a media frase en temas largos.
-        # ~2,5 tokens por palabra, y 8000 es el maximo del proveedor.
-        max_tokens=min(8000, max(2000, int(palabras * 0.7 * 2.5) + 500)),
-    )
+    resultado = _pedir(llm, modelo, cuerpo, len(filas), palabras)
     registrar(con, "resumen", resultado)
     md = resultado.texto.strip()
 

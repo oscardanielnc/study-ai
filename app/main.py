@@ -9,7 +9,7 @@ from app.config import Settings, get_settings
 from app.db import conectar
 from app.llm.client import LLMClient
 from app.llm.openrouter import OpenRouterClient
-from app.services.ingesta import marcar_interrumpidos
+from app.services.ingesta import limpiar_basura, marcar_interrumpidos
 
 ESTATICOS = Path(__file__).parent.parent / "static"
 
@@ -40,6 +40,9 @@ def app() -> FastAPI:
     settings = get_settings()
     con = conectar(settings.db_path)
     marcar_interrumpidos(con)
+    # Despues de cerrar los jobs a medias: asi tambien se llevan los temas
+    # que el reinicio dejo sin resumen.
+    limpiar_basura(con)
     return crear_app(
         con,
         OpenRouterClient(settings.openrouter_api_key, base_url=settings.llm_base_url),
