@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "dev.oscarnavarro.study",
+      "sha256_cert_fingerprints": [
+        "B7:66:C0:CA:F8:2E:B0:B1:99:4F:86:8C:4B:34:DF:F6:4E:49:47:D3:A4:A5:04:58:C2:9A:33:B3:93:29:60:D1"
+      ]
+    }
+  }
+]

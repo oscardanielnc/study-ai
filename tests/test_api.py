@@ -233,3 +233,14 @@ def test_el_armazon_no_se_queda_cacheado_en_el_borde(cliente):
     assert "no-cache" not in c.get("/vendor/marked.min.js").headers.get(
         "cache-control", ""
     )
+
+
+def test_assetlinks_declara_el_apk_como_dueno_del_dominio(cliente):
+    # Sin esto Android abre el TWA con la barra del navegador encima: deja de
+    # parecer una app. La huella tiene que ser la de la clave que firma el APK.
+    c, _, _ = cliente
+    r = c.get("/.well-known/assetlinks.json")
+    assert r.status_code == 200
+    destino = r.json()[0]["target"]
+    assert destino["package_name"] == "dev.oscarnavarro.study"
+    assert len(destino["sha256_cert_fingerprints"][0]) == 95  # 32 bytes en hex
