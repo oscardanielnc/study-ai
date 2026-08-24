@@ -34,5 +34,6 @@
   "signingKey": {
     "path": "./android.keystore",
     "alias": "estudia"
-  }
+  },
+  "splashScreenFadeOutDuration": 300
 }
