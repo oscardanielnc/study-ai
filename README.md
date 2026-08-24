@@ -98,6 +98,12 @@ Usuario y contraseña, nada más: sin correo, sin recuperación, sin perfiles.
   dueño no tiene por qué enterarse de que existe.
 - `GET /api/yo` devuelve `null` en vez de 401, para que abrir la app sin
   sesión no parezca un error.
+- El perfil (`PATCH /api/perfil`) cambia el nombre y la paleta; la
+  contraseña va aparte (`POST /api/perfil/clave`) porque pide la de
+  siempre y cierra las sesiones de los demás dispositivos.
+- Las paletas (`papel`, `noche`, `bosque`, `atardecer`) se guardan en el
+  usuario, no en el móvil, y se aplican desde `localStorage` antes de
+  pedir nada al servidor para que no parpadee el tema por defecto.
 
 La base que ya existía se migra en `db.py` con un `ALTER TABLE`: los temas
 anteriores se quedan sin dueño y no los ve nadie.
