@@ -32,6 +32,17 @@ def _migrar(con: sqlite3.Connection) -> None:
             "ALTER TABLE usuarios ADD COLUMN tema_visual TEXT NOT NULL"
             " DEFAULT 'papel'"
         )
+    if "ultimo_uso" not in {
+        f["name"] for f in con.execute("PRAGMA table_info(sesiones)")
+    }:
+        con.execute(
+            "ALTER TABLE sesiones ADD COLUMN ultimo_uso TEXT NOT NULL DEFAULT ''"
+        )
+        con.execute("UPDATE sesiones SET ultimo_uso=datetime('now')")
+    if "usuario_id" not in {
+        f["name"] for f in con.execute("PRAGMA table_info(llm_calls)")
+    }:
+        con.execute("ALTER TABLE llm_calls ADD COLUMN usuario_id INTEGER")
     # Despues del ALTER, nunca en schema.sql: alli se creaba antes que la
     # columna y el arranque moria con "no such column: usuario_id".
     con.execute("CREATE INDEX IF NOT EXISTS idx_temas_usuario ON temas(usuario_id)")

@@ -11,6 +11,7 @@ def transcribir_imagen(
     llm: LLMClient,
     modelo: str,
     datos: bytes,
+    usuario_id: int | None = None,
 ) -> str:
     """Transcribe una imagen. El reescalado abarata el paso mas caro."""
     resultado = llm.completar(
@@ -22,5 +23,5 @@ def transcribir_imagen(
         # modelo gasta hasta el ultimo token pensando y devuelve texto vacio.
         sin_razonamiento=True,
     )
-    registrar(con, "transcripcion", resultado)
+    registrar(con, "transcripcion", resultado, usuario_id)
     return resultado.texto.strip()

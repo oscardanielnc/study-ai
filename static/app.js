@@ -1,4 +1,20 @@
 const $ = (sel) => document.querySelector(sel);
+
+/** Nada que venga del modelo, del servidor o del nombre de un archivo entra
+ *  crudo en el HTML.
+ *
+ *  El modelo transcribe FIELMENTE lo que ve en la foto: basta con fotografiar
+ *  una hoja donde ponga `<img src=x onerror=...>` para que ese texto llegue al
+ *  resumen, al titulo del tema y a los enunciados. Antes se ejecutaba, y con
+ *  el token de sesion en localStorage eso es robar la cuenta. */
+function esc(valor) {
+  return String(valor ?? "")
+    .split("&").join("&amp;")
+    .split("<").join("&lt;")
+    .split(">").join("&gt;")
+    .split('"').join("&quot;")
+    .split("'").join("&#39;");
+}
 const app = () => $("#app");
 const NIVELES = [
   ["facil", "Fácil"],
@@ -117,7 +133,7 @@ const ICONO_SALIDA = `<svg viewBox="0 0 24 24" aria-hidden="true">
 function pintarSesion(usuario) {
   $("#sesion").innerHTML = usuario
     ? `<button class="quien" onclick="vistaPerfil()" aria-label="Ajustes de perfil">
-         ${ICONO_PERSONA}<span>${usuario}</span>
+         ${ICONO_PERSONA}<span>${esc(usuario)}</span>
        </button>
        <button class="salir" onclick="pedirSalir()">
          ${ICONO_SALIDA}<span>Salir</span>
@@ -232,7 +248,7 @@ function cargando(titulo, detalle = "", frases = null) {
     const seg = Math.floor((Date.now() - desde) / 1000);
     const reloj = `${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, "0")}`;
     const frase = frases[Math.floor(seg / 5) % frases.length];
-    $("#frase").innerHTML = `${frase} <span class="reloj">${reloj}</span>`;
+    $("#frase").innerHTML = `${esc(frase)} <span class="reloj">${reloj}</span>`;
   };
   paso();
   latido = setInterval(paso, 1000);
@@ -268,6 +284,8 @@ function confirmar(html, alSi, verbo = "Eliminar") {
 }
 
 function fallo(mensaje, volver) {
+  // `mensaje` ya viene escapado por quien lo compone, porque a veces
+  // lleva <br> y <small> a proposito.
   pintar(`<p class="error">${mensaje}</p>
     <button class="secundario" onclick="${volver}">← Volver</button>`);
 }
@@ -309,7 +327,7 @@ function vistaPerfil() {
       <h2>Nombre de usuario</h2>
       <input id="p-usuario" name="username" autocomplete="username"
         autocapitalize="none" autocorrect="off" spellcheck="false"
-        value="${quien ? quien.textContent : ""}" required>
+        value="${esc(quien ? quien.textContent : "")}" required>
       <p class="dicho" id="d-nombre"></p>
       <button type="submit">Guardar nombre</button>
     </form>
@@ -426,7 +444,7 @@ async function vistaTemas() {
               (t) => `
       <div class="tarjeta" data-id="${t.id}" onclick="vistaTema(${t.id})">
         <div class="cuerpo">
-          <h3>${t.titulo}</h3>
+          <h3>${esc(t.titulo)}</h3>
           <small>${t.n_fuentes} archivo${t.n_fuentes === 1 ? "" : "s"} · ${
                 t.actualizado_en
               }</small>
@@ -449,7 +467,7 @@ async function descartarTema(id, error) {
   } catch {}
   fallo(
     `No se pudieron procesar tus apuntes, así que no se guardó el tema.
-     Vuelve a intentarlo.<br><small>${error}</small>`,
+     Vuelve a intentarlo.<br><small>${esc(error)}</small>`,
     "vistaTemas()"
   );
 }
@@ -459,14 +477,14 @@ async function descartarTema(id, error) {
 function pedirBorrar(id) {
   const titulo = $(`.tarjeta[data-id="${id}"] h3`).textContent;
   confirmar(
-    `¿Eliminar <b>${titulo}</b>?<br>
+    `¿Eliminar <b>${esc(titulo)}</b>?<br>
      <small>Se borran su resumen, sus preguntas y su historial de exámenes.
      No se puede deshacer.</small>`,
     async () => {
       try {
         await api(`/temas/${id}`, { method: "DELETE" });
       } catch (e) {
-        return fallo(e.message, "vistaTemas()");
+        return fallo(esc(e.message), "vistaTemas()");
       }
       vistaTemas();
     }
@@ -571,7 +589,7 @@ function nuevoTema() {
         (error) => descartarTema(tema_id, error)
       );
     } catch (e) {
-      fallo(e.message, "vistaTemas()");
+      fallo(esc(e.message), "vistaTemas()");
     }
   };
   input.click();
@@ -615,7 +633,10 @@ function seguirJob(jobId, tipo, titulo, alTerminar, alFallar) {
     if (j.estado === "fallido") {
       return alFallar
         ? alFallar(j.error)
-        : fallo(`No se pudo terminar.<br><small>${j.error}</small>`, "vistaTemas()");
+        : fallo(
+            `No se pudo terminar.<br><small>${esc(j.error)}</small>`,
+            "vistaTemas()"
+          );
     }
     temporizador = setTimeout(tic, 2000);
   };
@@ -650,7 +671,7 @@ async function vistaTema(id) {
       api(`/temas/${id}/job`),
     ]);
   } catch (e) {
-    return fallo(e.message, "vistaTemas()");
+    return fallo(esc(e.message), "vistaTemas()");
   }
 
   // Reenganche: si el tema sigue procesandose (recarga, pestana descartada,
@@ -690,8 +711,12 @@ async function vistaTema(id) {
   );
 
   const destino = $("#resumen");
+  // Se escapa ANTES de marked: marked v15 deja pasar el HTML crudo tal cual
+  // (quito `sanitize` en la v8) y aqui no queremos HTML del modelo, solo
+  // Markdown. Escapado, `<img onerror>` se lee como texto y el Markdown y el
+  // LaTeX siguen funcionando igual.
   destino.innerHTML = marcarDiagramas(
-    marked.parse(normalizarFormulas(t.resumen_md || "_Sin resumen._"))
+    marked.parse(esc(normalizarFormulas(t.resumen_md || "_Sin resumen._")))
   );
   // Las tablas anchas scrollean dentro de su caja; la pagina nunca se mueve
   // en horizontal.
@@ -768,7 +793,7 @@ async function iniciarExamen(temaId) {
   try {
     r = await api(`/temas/${temaId}/examenes`, peticion);
   } catch (e) {
-    return fallo(e.message, `vistaTema(${temaId})`);
+    return fallo(esc(e.message), `vistaTema(${temaId})`);
   }
 
   if (r.examen_id) return vistaExamen(temaId, r);
@@ -783,7 +808,7 @@ async function iniciarExamen(temaId) {
       try {
         vistaExamen(temaId, await api(`/temas/${temaId}/examenes`, peticion));
       } catch (e) {
-        fallo(e.message, `vistaTema(${temaId})`);
+        fallo(esc(e.message), `vistaTema(${temaId})`);
       }
     }
   );
@@ -805,11 +830,11 @@ function vistaExamen(temaId, ex) {
           &nbsp;<span class="fallos">✕ ${i - aciertos}</span></span>
       </div>
       <div class="progreso"><div style="width:${(i / total) * 100}%"></div></div>
-      <div class="enunciado">${p.enunciado}</div>
+      <div class="enunciado">${esc(p.enunciado)}</div>
       <div id="opciones">${p.opciones
         .map(
           (o, k) =>
-            `<button class="opcion" data-k="${k}"><span>${o}</span>
+            `<button class="opcion" data-k="${k}"><span>${esc(o)}</span>
                <span class="marca"></span></button>`
         )
         .join("")}</div>
@@ -831,7 +856,7 @@ function vistaExamen(temaId, ex) {
         body: JSON.stringify({ pregunta_id: p.id, elegida_idx: k }),
       });
     } catch (e) {
-      return fallo(e.message, `vistaTema(${temaId})`);
+      return fallo(esc(e.message), `vistaTema(${temaId})`);
     }
     if (r.correcta) aciertos++;
 
@@ -850,7 +875,7 @@ function vistaExamen(temaId, ex) {
     });
 
     const fb = $("#feedback");
-    fb.innerHTML = `<div class="porque"><h4>Por qué</h4>${r.justificacion}</div>
+    fb.innerHTML = `<div class="porque"><h4>Por qué</h4>${esc(r.justificacion)}</div>
       <button id="sig">${i + 1 < total ? "Siguiente" : "Ver resultado"}</button>`;
     renderizar(fb);
     $("#sig").onclick = () => {

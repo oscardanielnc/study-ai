@@ -189,8 +189,10 @@ def test_historial_omite_examenes_sin_terminar(cliente):
 
 
 def test_gasto_expone_el_tope(cliente):
+    """El tope que se ensena es el propio, no el de la factura entera: es el
+    unico que el usuario puede agotar por su cuenta."""
     c, _, _ = cliente
-    assert c.get("/api/gasto").json()["tope_usd"] == 5.0
+    assert c.get("/api/gasto").json()["tope_usd"] == 1.0
 
 
 def test_tema_inexistente_devuelve_404(cliente):

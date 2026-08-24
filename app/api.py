@@ -6,6 +6,7 @@ from fastapi import (
     Depends,
     Header,
     HTTPException,
+    Request,
     UploadFile,
 )
 from pydantic import BaseModel, Field
@@ -14,12 +15,24 @@ from app.config import Settings
 from app.llm.client import LLMClient
 from app.llm.contabilidad import TopeSuperado, gasto_del_mes, verificar_tope
 from app.models import Nivel
-from app.services import auth
+from app.services import auth, limites
 from app.services import examen as svc_examen
 from app.services.ingesta import Archivo, crear_job, procesar
 from app.services.preguntas import LOTE_MAX, generar
 
 CANTIDADES = (10, 20, 30, 40)
+
+# Limites de subida. La VM tiene 1 vCPU y el disco justo: sin techo, una sola
+# peticion puede tumbarla, y no hace falta ser malicioso para conseguirlo.
+MAX_ARCHIVOS = 20
+MAX_BYTES_ARCHIVO = 12 * 1024 * 1024
+MAX_BYTES_TOTAL = 60 * 1024 * 1024
+MAX_NOMBRE = 200
+
+# Fuerza bruta: 10 intentos por ventana. Con scrypt a ~100 ms el coste ya es
+# alto, pero un bot paciente prueba miles al dia sin esto.
+INTENTOS_MAX = 10
+INTENTOS_MINUTOS = 15
 
 
 class NivelBody(BaseModel):
@@ -95,8 +108,23 @@ def crear_router(
         ).fetchone()
         return {"token": token, "usuario": usuario, "tema_visual": fila["tema_visual"]}
 
+    def _frenar(peticion: Request, accion: str, quien: str = "") -> list[str]:
+        """Cuenta por IP y por nombre a la vez: frenar al atacante por IP no
+        puede dejar fuera al dueno de la cuenta, ni al reves."""
+        ip = peticion.client.host if peticion.client else "?"
+        claves = [f"{accion}:ip:{ip}"]
+        if quien:
+            claves.append(f"{accion}:quien:{quien.lower()}")
+        for clave in claves:
+            try:
+                limites.registrar_intento(con, clave, INTENTOS_MAX, INTENTOS_MINUTOS)
+            except limites.DemasiadosIntentos as exc:
+                raise HTTPException(status_code=429, detail=str(exc)) from exc
+        return claves
+
     @r.post("/registro")
-    def registro(body: Credenciales):
+    def registro(body: Credenciales, peticion: Request):
+        _frenar(peticion, "registro")
         try:
             token = auth.registrar(con, body.usuario, body.clave)
         except auth.DatosInvalidos as exc:
@@ -106,11 +134,16 @@ def crear_router(
         return _sesion_nueva(token, body.usuario)
 
     @r.post("/login")
-    def login(body: Credenciales):
+    def login(body: Credenciales, peticion: Request):
+        claves = _frenar(peticion, "login", body.usuario)
         try:
             token = auth.entrar(con, body.usuario, body.clave)
         except auth.CredencialesMalas as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
+        # Acertar borra el historial: al dueno no se le castiga por haberse
+        # equivocado antes.
+        for clave in claves:
+            limites.olvidar(con, clave)
         return _sesion_nueva(token, body.usuario)
 
     @r.get("/yo")
@@ -158,7 +191,32 @@ def crear_router(
         auth.salir(con, token)
 
     async def _leer(archivos: list[UploadFile]) -> list[Archivo]:
-        return [Archivo(a.filename or "sin-nombre", await a.read()) for a in archivos]
+        if not archivos:
+            raise HTTPException(status_code=400, detail="No mandaste ningun archivo.")
+        if len(archivos) > MAX_ARCHIVOS:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Como maximo {MAX_ARCHIVOS} archivos por tema.",
+            )
+        leidos: list[Archivo] = []
+        total = 0
+        for a in archivos:
+            datos = await a.read()
+            total += len(datos)
+            if len(datos) > MAX_BYTES_ARCHIVO or total > MAX_BYTES_TOTAL:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"Cada archivo puede pesar hasta"
+                        f" {MAX_BYTES_ARCHIVO // (1024 * 1024)} MB y el lote"
+                        f" {MAX_BYTES_TOTAL // (1024 * 1024)} MB."
+                    ),
+                )
+            # El nombre lo elige quien sube y acaba en mensajes de error: se
+            # corta para que no sea un vehiculo de nada.
+            nombre = (a.filename or "sin-nombre")[:MAX_NOMBRE]
+            leidos.append(Archivo(nombre, datos))
+        return leidos
 
     @r.get("/temas")
     def listar_temas(yo: int = Depends(_quien)):
@@ -177,7 +235,12 @@ def crear_router(
         yo: int = Depends(_quien),
     ):
         try:
-            verificar_tope(con, settings.tope_gasto_mensual_usd)
+            verificar_tope(
+                con,
+                settings.tope_gasto_mensual_usd,
+                yo,
+                settings.tope_gasto_usuario_usd,
+            )
         except TopeSuperado as exc:
             raise HTTPException(status_code=402, detail=str(exc)) from exc
 
@@ -297,7 +360,12 @@ def crear_router(
 
         if sin_ver < body.cantidad:
             try:
-                verificar_tope(con, settings.tope_gasto_mensual_usd)
+                verificar_tope(
+                    con,
+                    settings.tope_gasto_mensual_usd,
+                    yo,
+                    settings.tope_gasto_usuario_usd,
+                )
             except TopeSuperado as exc:
                 raise HTTPException(status_code=402, detail=str(exc)) from exc
             faltan = body.cantidad - sin_ver
@@ -348,8 +416,8 @@ def crear_router(
     @r.get("/gasto")
     def gasto(yo: int = Depends(_quien)):
         return {
-            "mes_usd": round(gasto_del_mes(con), 4),
-            "tope_usd": settings.tope_gasto_mensual_usd,
+            "mes_usd": round(gasto_del_mes(con, yo), 4),
+            "tope_usd": settings.tope_gasto_usuario_usd,
         }
 
     return r

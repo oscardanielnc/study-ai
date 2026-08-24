@@ -13,8 +13,18 @@ CREATE TABLE IF NOT EXISTS usuarios (
 CREATE TABLE IF NOT EXISTS sesiones (
     token      TEXT PRIMARY KEY,
     usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    creado_en  TEXT NOT NULL DEFAULT (datetime('now'))
+    creado_en  TEXT NOT NULL DEFAULT (datetime('now')),
+    ultimo_uso TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Freno a la fuerza bruta. En la base y no en memoria: quien provoque un
+-- reinicio no puede limpiarse el contador.
+CREATE TABLE IF NOT EXISTS intentos (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    clave     TEXT NOT NULL,
+    creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_intentos_clave ON intentos(clave, creado_en);
 
 CREATE TABLE IF NOT EXISTS temas (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,5 +99,6 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     tokens_in      INTEGER NOT NULL,
     tokens_out     INTEGER NOT NULL,
     costo_estimado REAL NOT NULL,
+    usuario_id     INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
     creado_en      TEXT NOT NULL DEFAULT (datetime('now'))
 );

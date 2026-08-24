@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from app.config import Settings
 from app.ingest.pdfs import contar_paginas, es_digital, extraer_texto, rasterizar
 from app.llm.client import LLMClient
+from app.llm.contabilidad import dueno_del_tema
+from app.services.auth import limpiar_sesiones
 from app.services.resumen import generar_resumen
 from app.services.transcribe import transcribir_imagen
 
@@ -46,6 +48,7 @@ def limpiar_basura(con: sqlite3.Connection) -> None:
     le conto al usuario y las transcripciones sueltas no le sirven de nada.
     Se respeta lo que aun se esta procesando.
     """
+    limpiar_sesiones(con)
     con.execute(
         "DELETE FROM temas WHERE id NOT IN (SELECT tema_id FROM resumen)"
         " AND id NOT IN (SELECT tema_id FROM jobs"
@@ -77,6 +80,7 @@ def procesar(
     lo que sobrevive es la fila en `fuentes`, escrita archivo a archivo."""
     con.execute("UPDATE jobs SET estado='en_curso' WHERE id=?", (job_id,))
     con.commit()
+    dueno = dueno_del_tema(con, tema_id)
 
     for i, archivo in enumerate(archivos, start=1):
         try:
@@ -87,14 +91,14 @@ def procesar(
                     # asi que rasterizamos cada pagina antes de mandarla a vision.
                     texto = "\n\n".join(
                         transcribir_imagen(
-                            con, llm, settings.modelo_transcripcion, pagina
+                            con, llm, settings.modelo_transcripcion, pagina, dueno
                         )
                         for pagina in rasterizar(archivo.datos)
                     )
                 _guardar_fuente(con, tema_id, archivo.nombre, "pdf", texto)
             else:
                 texto = transcribir_imagen(
-                    con, llm, settings.modelo_transcripcion, archivo.datos
+                    con, llm, settings.modelo_transcripcion, archivo.datos, dueno
                 )
                 _guardar_fuente(con, tema_id, archivo.nombre, "imagen", texto)
         except Exception as exc:

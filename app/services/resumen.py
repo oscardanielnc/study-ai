@@ -4,7 +4,7 @@ import sqlite3
 from collections.abc import Callable
 
 from app.llm.client import LLMClient, LLMError, LLMResult
-from app.llm.contabilidad import registrar
+from app.llm.contabilidad import dueno_del_tema, registrar
 from app.llm.prompts import RATIO, prompt_resumen
 
 # Tope del proveedor por respuesta y lo que eso da de si en espanol (~3 tokens
@@ -117,6 +117,7 @@ def generar_resumen(
     if not filas:
         raise ValueError(f"El tema {tema_id} no tiene fuentes que resumir")
 
+    dueno = dueno_del_tema(con, tema_id)
     bloques = repartir([f["transcripcion"] for f in filas])
     total_docs = sum(len(b) for b in bloques)
 
@@ -138,7 +139,7 @@ def generar_resumen(
             primero=i == 0,
             ultimo=i == len(bloques) - 1,
         )
-        registrar(con, "resumen", resultado)
+        registrar(con, "resumen", resultado, dueno)
         partes.append(resultado.texto.strip())
         hecho += len(bloque)
         if avance:

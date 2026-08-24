@@ -47,9 +47,16 @@ def iniciar(
 def responder(
     con: sqlite3.Connection, examen_id: int, pregunta_id: int, elegida_idx: int
 ) -> dict:
-    p = con.execute("SELECT * FROM preguntas WHERE id=?", (pregunta_id,)).fetchone()
+    # La pregunta tiene que ser del mismo tema que el examen. Buscarla solo por
+    # id dejaba pedir la respuesta correcta y la explicacion de la pregunta de
+    # cualquier otro usuario con solo tener un examen propio abierto.
+    p = con.execute(
+        "SELECT pr.* FROM preguntas pr JOIN examenes e ON e.tema_id=pr.tema_id"
+        " WHERE pr.id=? AND e.id=?",
+        (pregunta_id, examen_id),
+    ).fetchone()
     if p is None:
-        raise ValueError(f"Pregunta {pregunta_id} inexistente")
+        raise ValueError(f"La pregunta {pregunta_id} no es de este examen")
 
     correcta = elegida_idx == p["correcta_idx"]
     con.execute(

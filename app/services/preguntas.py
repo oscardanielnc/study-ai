@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pydantic import ValidationError
 
 from app.llm.client import LLMClient
-from app.llm.contabilidad import registrar
+from app.llm.contabilidad import dueno_del_tema, registrar
 from app.llm.prompts import prompt_preguntas
 from app.models import LotePreguntas, Nivel
 
@@ -79,7 +79,7 @@ def generar_lote(
             usuario=cuerpo,
             max_tokens=16000,
         )
-        registrar(con, f"preguntas_{nivel}", resultado)
+        registrar(con, f"preguntas_{nivel}", resultado, dueno_del_tema(con, tema_id))
         try:
             lote = parsear_lote(resultado.texto)
             break

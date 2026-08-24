@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     modelo_preguntas: str = "deepseek-v4-pro"
     db_path: str = "data/estudia.db"
     tope_gasto_mensual_usd: float = 5.0
+    # Por cabeza. El registro esta abierto: sin esto, el primero que
+    # llegue puede quemar la factura entera y dejar fuera a los demas.
+    tope_gasto_usuario_usd: float = 1.0
 
 
 @lru_cache
