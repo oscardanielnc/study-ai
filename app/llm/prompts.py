@@ -13,20 +13,41 @@ Reglas obligatorias:
 Devuelve solo la transcripción, sin comentarios ni preámbulo.\
 """
 
-RESUMEN = """\
-Eres un profesor que prepara material de estudio en español.
+RESUMEN = """Eres un profesor que prepara material de estudio en español.
 
-A partir de las transcripciones de apuntes que recibirás, redacta un resumen
-condensado y bien estructurado en Markdown:
-- Un título de nivel 1 (#) breve y descriptivo del tema.
+Vas a recibir {n} documento{s} transcrito{s} de los apuntes de un alumno,
+separado{s} por encabezados "## Documento N de {n}".
+
+Redacta con TODOS ellos un único resumen de estudio en Markdown:
+- Un título de nivel 1 (#) breve y descriptivo del tema completo.
 - Subtítulos (##) por cada bloque conceptual.
-- Párrafos condensados: elimina la redundancia, conserva todo lo evaluable.
+- Cubre TODOS los documentos. Ninguno puede quedar fuera ni reducirse a una
+  línea: cada uno aporta contenido evaluable distinto.
+- Condensa la redundancia, nunca el contenido. Si algo puede entrar en un
+  examen, tiene que estar aquí: definiciones, cifras, clasificaciones,
+  fórmulas, ejemplos y excepciones.
 - Fórmulas en LaTeX ($ en línea, $$ en bloque).
 - Una sección final "## Puntos clave" con viñetas.
 
+Extensión objetivo: unas {objetivo} palabras. Quédate por debajo solo si los
+apuntes de verdad no dan para más; nunca por comodidad.
+
 Conserva las marcas [?] y los bloques [DIAGRAMA: ...] que encuentres.
-Devuelve solo el Markdown.\
-"""
+Devuelve solo el Markdown."""
+
+
+def prompt_resumen(n_documentos: int, palabras_entrada: int) -> str:
+    """Sin un objetivo explicito el modelo escribe siempre lo mismo: cinco
+    fotos daban un resumen igual de largo que una sola, comprimiendo cinco
+    veces mas y tirando el 80% de lo estudiable. La extension tiene que
+    seguir a la entrada."""
+    objetivo = max(300, round(palabras_entrada * 0.7 / 50) * 50)
+    return RESUMEN.format(
+        n=n_documentos,
+        s="" if n_documentos == 1 else "s",
+        objetivo=objetivo,
+    )
+
 
 _NIVELES = {
     "facil": (

@@ -1,3 +1,4 @@
+import pathlib
 import io
 
 import pytest
@@ -244,3 +245,11 @@ def test_assetlinks_declara_el_apk_como_dueno_del_dominio(cliente):
     destino = r.json()[0]["target"]
     assert destino["package_name"] == "dev.oscarnavarro.study"
     assert len(destino["sha256_cert_fingerprints"][0]) == 95  # 32 bytes en hex
+
+
+def test_el_service_worker_no_sirve_el_html_desde_cache():
+    """El armazon cacheado servia un index.html viejo para siempre: cambios ya
+    desplegados (quitar el contador de gasto) nunca llegaban al movil."""
+    sw = pathlib.Path("static/sw.js").read_text(encoding="utf-8")
+    assert "navigate" in sw, "el documento tiene que ir a la red primero"
+    assert '"/index.html"' not in sw, "el HTML no puede precachearse"

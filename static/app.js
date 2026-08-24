@@ -10,6 +10,29 @@ const CANTIDADES = [10, 20, 30, 40];
 // Sondeo del job en curso. Vive arriba porque `pintar` lo cancela.
 let sondear = null;
 let temporizador = null;
+let latido = null;
+
+/** Lo que hace el servidor mientras la barra no se mueve. Con 10 preguntas es
+ *  una sola llamada al modelo: tres minutos clavado en "0 / 10" parecian un
+ *  cuelgue. Aqui no se inventa progreso, se cuenta lo que esta pasando. */
+const FRASES = {
+  transcribir: [
+    "Leyendo tus archivos…",
+    "Transcribiendo la escritura…",
+    "Interpretando diagramas y fórmulas…",
+    "Ordenando los conceptos…",
+    "Redactando el resumen…",
+    "Puliendo la redacción…",
+  ],
+  generar_preguntas: [
+    "Repasando tus apuntes…",
+    "Buscando lo evaluable…",
+    "Pensando…",
+    "Redactando los enunciados…",
+    "Inventando opciones creíbles…",
+    "Revisando las respuestas correctas…",
+  ],
+};
 
 async function api(ruta, opciones = {}) {
   const r = await fetch(`/api${ruta}`, opciones);
@@ -24,6 +47,7 @@ function pintar(html, conBarra = false) {
   // Cambiar de pantalla cancela el sondeo anterior: si no, dos jobs solapados
   // se pisarian la barra de progreso.
   clearTimeout(temporizador);
+  clearInterval(latido);
   sondear = null;
   app().className = conBarra ? "con-barra" : "";
   app().innerHTML = html;
@@ -31,17 +55,53 @@ function pintar(html, conBarra = false) {
 
 /** Pantalla de espera con barra. Se pinta en cuanto hay algo que esperar: el
  *  usuario nunca debe quedarse mirando una pantalla quieta. */
-function cargando(titulo, detalle = "") {
+function cargando(titulo, detalle = "", frases = null) {
   pintar(`<p class="cargando">${titulo}</p>
-    <div class="progreso"><div id="pb" style="width:0%"></div></div>
-    <p id="pt" class="marcador">${detalle}</p>`);
+    <div class="progreso indeterminada"><div id="pb" style="width:0%"></div></div>
+    <p id="pt" class="marcador">${detalle}</p>
+    ${frases ? '<p id="frase" class="susurro"></p>' : ""}`);
+  if (!frases) return;
+
+  // El reloj se mueve cada segundo y la frase cada cinco. Ninguno adivina
+  // cuanto falta: solo demuestran que la app sigue viva.
+  const desde = Date.now();
+  const paso = () => {
+    const seg = Math.floor((Date.now() - desde) / 1000);
+    const reloj = `${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, "0")}`;
+    const frase = frases[Math.floor(seg / 5) % frases.length];
+    $("#frase").innerHTML = `${frase} <span class="reloj">${reloj}</span>`;
+  };
+  paso();
+  latido = setInterval(paso, 1000);
 }
 
 function avanzar(fraccion, detalle = "") {
   const pb = $("#pb");
   if (!pb) return;
+  // En cuanto hay progreso real, la barra deja de ser un vaiven y mide.
+  if (fraccion > 0) pb.parentElement.classList.remove("indeterminada");
   pb.style.width = `${Math.round(fraccion * 100)}%`;
   $("#pt").textContent = detalle;
+}
+
+/** Confirmacion propia: `confirm()` del navegador congela la app dentro del
+ *  APK y se ve como un aviso del sistema, no como parte de Estudia. */
+function confirmar(html, alSi) {
+  const fondo = document.createElement("div");
+  fondo.className = "modal";
+  fondo.innerHTML = `<div class="hoja">
+      <div class="dice">${html}</div>
+      <button class="peligro" id="si">Eliminar</button>
+      <button class="secundario" id="no">Cancelar</button>
+    </div>`;
+  document.body.appendChild(fondo);
+  const cerrar = () => fondo.remove();
+  fondo.onclick = (e) => e.target === fondo && cerrar();
+  fondo.querySelector("#no").onclick = cerrar;
+  fondo.querySelector("#si").onclick = () => {
+    cerrar();
+    alSi();
+  };
 }
 
 function fallo(mensaje, volver) {
@@ -77,7 +137,7 @@ async function vistaTemas() {
   location.hash = "";
   const temas = await api("/temas");
   pintar(`
-    <button onclick="nuevoTema()">+ Nuevo tema</button>
+    <button class="nuevo" onclick="nuevoTema()">+ Nuevo tema</button>
     <input type="file" id="archivos" multiple accept="image/*,.pdf" hidden>
     ${
       temas.length === 0
@@ -85,15 +145,38 @@ async function vistaTemas() {
         : temas
             .map(
               (t) => `
-      <div class="tarjeta" onclick="vistaTema(${t.id})">
-        <h3>${t.titulo}</h3>
-        <small>${t.n_fuentes} archivo${t.n_fuentes === 1 ? "" : "s"} · ${
+      <div class="tarjeta" data-id="${t.id}" onclick="vistaTema(${t.id})">
+        <div class="cuerpo">
+          <h3>${t.titulo}</h3>
+          <small>${t.n_fuentes} archivo${t.n_fuentes === 1 ? "" : "s"} · ${
                 t.actualizado_en
               }</small>
+        </div>
+        <button class="borrar" aria-label="Eliminar tema"
+          onclick="event.stopPropagation(); pedirBorrar(${t.id})">✕</button>
       </div>`
             )
             .join("")
     }`);
+}
+
+/** Borrar es irreversible y la papelera esta pegada a la tarjeta: siempre
+ *  se pregunta, y se dice exactamente que se lleva por delante. */
+function pedirBorrar(id) {
+  const titulo = $(`.tarjeta[data-id="${id}"] h3`).textContent;
+  confirmar(
+    `¿Eliminar <b>${titulo}</b>?<br>
+     <small>Se borran su resumen, sus preguntas y su historial de exámenes.
+     No se puede deshacer.</small>`,
+    async () => {
+      try {
+        await api(`/temas/${id}`, { method: "DELETE" });
+      } catch (e) {
+        return fallo(e.message, "vistaTemas()");
+      }
+      vistaTemas();
+    }
+  );
 }
 
 // ---------- Subida ----------
@@ -185,7 +268,9 @@ function nuevoTema() {
       // El hash entra ya: si el movil descarta la pestana, al volver se
       // reengancha al proceso en vez de perderlo.
       location.hash = `tema-${tema_id}`;
-      seguirJob(job_id, "Procesando tus apuntes…", () => vistaTema(tema_id));
+      seguirJob(job_id, "transcribir", "Procesando tus apuntes…", () =>
+        vistaTema(tema_id)
+      );
     } catch (e) {
       fallo(e.message, "vistaTemas()");
     }
@@ -198,8 +283,8 @@ function nuevoTema() {
  *  deja de mirar un rato. Un fallo de red suelto tampoco lo mata: se insiste. */
 const REINTENTOS = 60; // ~5 min de red caida antes de rendirse
 
-function seguirJob(jobId, titulo, alTerminar, alFallar) {
-  cargando(titulo);
+function seguirJob(jobId, tipo, titulo, alTerminar, alFallar) {
+  cargando(titulo, "", FRASES[tipo]);
   let fallos = 0;
   const tic = async () => {
     clearTimeout(temporizador);
@@ -270,6 +355,7 @@ async function vistaTema(id) {
   if (job && (job.estado === "pendiente" || job.estado === "en_curso")) {
     return seguirJob(
       job.id,
+      job.tipo,
       job.tipo === "generar_preguntas"
         ? "Preparando tus preguntas…"
         : "Procesando tus apuntes…",
@@ -386,6 +472,7 @@ async function iniciarExamen(temaId) {
   const plural = r.faltan === 1 ? "" : "s";
   seguirJob(
     r.job_id,
+    "generar_preguntas",
     `Preparando ${r.faltan} pregunta${plural} nueva${plural}…`,
     async () => {
       try {
@@ -474,8 +561,10 @@ function vistaExamen(temaId, ex) {
         <div class="nota">${r.aciertos}/${r.total}</div>
         <div class="de">${Math.round((r.aciertos / r.total) * 100)}% de aciertos</div>
       </div>
-      <button onclick="configurarExamen(${temaId})">Otro examen</button>
-      <button class="secundario" onclick="vistaTema(${temaId})">← Volver al tema</button>`);
+      <div class="apilados">
+        <button onclick="configurarExamen(${temaId})">Otro examen</button>
+        <button class="secundario" onclick="vistaTema(${temaId})">← Volver al tema</button>
+      </div>`);
     };
 
   pregunta();

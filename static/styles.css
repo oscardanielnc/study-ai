@@ -30,7 +30,7 @@ body {
 }
 
 /* Todas las cifras alineadas: no deben bailar al cambiar el marcador. */
-.cifra, #gasto, .marcador { font-family: "JetBrains Mono", ui-monospace, monospace; }
+.cifra, .marcador { font-family: "JetBrains Mono", ui-monospace, monospace; }
 
 /* ---------- Cabecera ---------- */
 
@@ -45,12 +45,6 @@ body {
   margin: 0; font-size: 20px; font-weight: 700; color: var(--tinta);
   letter-spacing: -0.01em;
 }
-#gasto {
-  font-size: 12px; color: var(--tenue); background: var(--hundido);
-  border: 1px solid var(--borde); border-radius: 999px; padding: 4px 10px;
-  white-space: nowrap;
-}
-
 #app {
   padding: 20px;
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
@@ -84,10 +78,21 @@ button.fantasma {
 /* ---------- Tarjetas de tema ---------- */
 
 .tarjeta {
+  display: flex; align-items: flex-start; gap: 8px;
   background: var(--superficie); border: 1px solid var(--borde);
   border-radius: var(--r-tarjeta); padding: 18px; margin-bottom: 12px;
   cursor: pointer;
 }
+.tarjeta .cuerpo { flex: 1; min-width: 0; }
+
+/* El aspa no compite con la tarjeta: se ve al buscarla, no antes. */
+.tarjeta .borrar {
+  flex: 0 0 auto; width: 34px; min-height: 34px; padding: 0;
+  border: 0; background: transparent; color: var(--tenue);
+  font-size: 15px; font-weight: 400; border-radius: 50%; line-height: 1;
+}
+.tarjeta .borrar:active { background: var(--mal-fondo); color: var(--mal-tinta); }
+
 .tarjeta:active { background: var(--hundido); }
 .tarjeta h3 {
   margin: 0 0 6px; font-size: 17px; font-weight: 600; line-height: 1.35;
@@ -96,6 +101,12 @@ button.fantasma {
 .tarjeta small { color: var(--tenue); font-size: 13px; }
 
 .vacio { color: var(--tenue); text-align: center; padding: 48px 20px; }
+
+/* Separa el boton de crear de la lista: iban pegados. */
+.nuevo { margin-bottom: 22px; }
+
+/* Botones apilados (resultado del examen): nunca se tocan. */
+.apilados { display: grid; gap: 12px; margin-top: 8px; }
 
 /* ---------- Resumen ---------- */
 
@@ -157,6 +168,57 @@ button.fantasma {
 .cargando { font-size: 17px; color: var(--tinta); margin: 40px 0 0; text-align: center; }
 .cargando + .progreso { margin: 16px 0 8px; }
 .cargando ~ .marcador { justify-content: center; }
+
+.susurro {
+  text-align: center; color: var(--tenue); font-size: 14px; margin: 22px 0 0;
+  animation: respirar 5s ease-in-out infinite;
+}
+.susurro .reloj {
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px;
+  color: var(--borde); margin-left: 6px;
+}
+@keyframes respirar { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+
+/* Mientras no hay progreso medible la barra se mueve igualmente: quieta
+   durante tres minutos se lee como "se colgo". */
+.progreso.indeterminada { position: relative; }
+.progreso.indeterminada::after {
+  content: ""; position: absolute; inset: 0; width: 35%;
+  background: var(--tinta); border-radius: 999px;
+  animation: vaiven 1.6s ease-in-out infinite;
+}
+@keyframes vaiven {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(286%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .susurro, .progreso.indeterminada::after { animation: none; }
+  .progreso.indeterminada::after { opacity: .4; }
+}
+
+/* ---------- Confirmacion ---------- */
+
+.modal {
+  position: fixed; inset: 0; z-index: 50; display: flex;
+  align-items: flex-end; justify-content: center;
+  background: rgba(26, 46, 68, .35); padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+.hoja {
+  width: 100%; max-width: 420px; display: grid; gap: 10px;
+  background: var(--papel); border: 1px solid var(--borde);
+  border-radius: var(--r-tarjeta); padding: 22px;
+  animation: subir .18s ease-out;
+}
+.hoja .dice { font-size: 16px; line-height: 1.55; margin-bottom: 6px; }
+.hoja .dice b { color: var(--tinta); }
+.hoja .dice small { color: var(--tenue); font-size: 14px; }
+.hoja .peligro {
+  background: var(--mal-tinta); border-color: var(--mal-tinta); color: #fff;
+}
+@keyframes subir { from { transform: translateY(16px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .hoja { animation: none; } }
 
 .progreso {
   height: 4px; background: var(--borde); border-radius: 999px;

@@ -1,7 +1,10 @@
+import re
+
 import pytest
 
 from app.db import conectar
 from app.llm.fake import FakeLLMClient
+from app.llm.prompts import prompt_resumen
 from app.services.resumen import extraer_titulo, generar_resumen
 
 MD = "# Ley de Ohm\n\n## Enunciado\n\n$V = IR$\n\n## Puntos clave\n\n- Uno\n"
@@ -60,3 +63,33 @@ def test_falla_si_el_tema_no_tiene_fuentes(tmp_path):
     con.commit()
     with pytest.raises(ValueError):
         generar_resumen(con, FakeLLMClient([MD]), "m", 9)
+
+
+# ---------- Extension proporcional a los apuntes ----------
+
+
+def _objetivo(prompt: str) -> int:
+    return int(re.search(r"unas (\d+) palabras", prompt).group(1))
+
+
+def test_el_objetivo_de_extension_crece_con_los_apuntes():
+    """Cinco fotos daban el mismo resumen que una: el modelo, sin objetivo,
+    escribe siempre lo mismo y comprime cinco veces mas."""
+    assert _objetivo(prompt_resumen(1, 800)) < _objetivo(prompt_resumen(5, 4000))
+
+
+def test_el_objetivo_tiene_un_suelo_para_apuntes_minusculos():
+    assert _objetivo(prompt_resumen(1, 20)) >= 300
+
+
+def test_el_prompt_dice_cuantos_documentos_llegan():
+    assert "5 documentos" in prompt_resumen(5, 4000)
+
+
+def test_el_cuerpo_numera_los_documentos(con):
+    """Sin separarlos, el modelo lee un texto corrido y funde los temas."""
+    llm = FakeLLMClient([MD])
+    generar_resumen(con, llm, "m", 1)
+    usuario = llm.llamadas[0]["usuario"]
+    assert "## Documento 1 de 2" in usuario
+    assert "## Documento 2 de 2" in usuario
