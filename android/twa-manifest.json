@@ -16,7 +16,6 @@
   "startUrl": "/",
   "iconUrl": "https://study.oscarnavarro.dev/icons/icon-512.png",
   "maskableIconUrl": "https://study.oscarnavarro.dev/icons/icon-512.png",
-  "appVersionName": "1.0.0",
   "appVersionCode": 1,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
@@ -35,5 +34,6 @@
     "path": "./android.keystore",
     "alias": "estudia"
   },
-  "splashScreenFadeOutDuration": 300
+  "splashScreenFadeOutDuration": 300,
+  "appVersion": "1.0.0"
 }
