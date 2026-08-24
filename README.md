@@ -83,6 +83,25 @@ python scripts/spike_vision.py ruta/a/fotos
 
 Compara los candidatos sobre material real y escribe `spike-resultados/`.
 
+## Usuarios
+
+Usuario y contraseña, nada más: sin correo, sin recuperación, sin perfiles.
+
+- Las claves se guardan con `hashlib.scrypt` y sal por usuario. Es de la
+  biblioteca estándar: no hay que compilar `bcrypt` en el ARM de la VM.
+- Cada sesión es un token opaco en la tabla `sesiones`, que el móvil guarda en
+  `localStorage` y **no caduca**. Volver a pedir la contraseña cada poco es lo
+  que hace que la gente deje de abrir la app. Se revoca con "Salir", que borra
+  la fila.
+- Cada tema tiene dueño (`temas.usuario_id`) y todos los endpoints lo
+  comprueban. Pedir el tema de otro devuelve **404, no 403**: quien no es el
+  dueño no tiene por qué enterarse de que existe.
+- `GET /api/yo` devuelve `null` en vez de 401, para que abrir la app sin
+  sesión no parezca un error.
+
+La base que ya existía se migra en `db.py` con un `ALTER TABLE`: los temas
+anteriores se quedan sin dueño y no los ve nadie.
+
 ## Despliegue
 
 ```bash
