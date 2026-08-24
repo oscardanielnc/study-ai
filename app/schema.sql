@@ -90,5 +90,3 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     costo_estimado REAL NOT NULL,
     creado_en      TEXT NOT NULL DEFAULT (datetime('now'))
 );
-
-CREATE INDEX IF NOT EXISTS idx_temas_usuario ON temas(usuario_id);
