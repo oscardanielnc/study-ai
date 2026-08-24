@@ -95,3 +95,35 @@ y el acceso lo controla una app de Cloudflare Access.
 `~/backup-estudia.sh` en la VM copia la BD con la API `.backup` de SQLite
 (no `cp`: con WAL activo eso captura estados a medias) y conserva 7 días.
 Corre por cron a las 03:15 hora Lima.
+
+## APK (Android)
+
+El APK es un **TWA**: un envoltorio nativo que abre la misma web. No hay
+código duplicado, así que un despliegue del servidor actualiza también la app
+sin reinstalar nada. El trabajo pesado ya vive en el servidor, de modo que no
+hace falta un servicio nativo en segundo plano.
+
+`android/twa-manifest.json` es la fuente; el resto del proyecto Android lo
+regenera Bubblewrap y no se versiona.
+
+```bash
+cd android
+bubblewrap update --skipVersionUpgrade   # regenera desde twa-manifest.json
+./gradlew.bat assembleRelease            # compila
+powershell -ExecutionPolicy Bypass -File .\firmar.ps1   # firma -> estudia.apk
+```
+
+`static/.well-known/assetlinks.json` declara que el APK es dueño del dominio.
+Sin ese archivo Android abre el TWA con la barra del navegador encima y deja
+de parecer una app. La huella que contiene tiene que ser la de la clave que
+firma el APK; `firmar.ps1` la imprime al terminar para poder compararla.
+
+Comprobar que Google lo ve:
+
+```bash
+curl "https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://study.oscarnavarro.dev&relation=delegate_permission/common.handle_all_urls"
+```
+
+La clave de firma (`android/android.keystore`) no está en git a propósito:
+quien la tenga puede publicar actualizaciones de la app. Si se pierde, Play
+Store no admite más actualizaciones de ese paquete.
