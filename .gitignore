@@ -19,3 +19,7 @@ android/*
 # actualizaciones de la app en nombre de Oscar.
 *.keystore
 *.jks
+
+# Planes y specs de trabajo con el agente. Se quedan en local: son notas de
+# proceso, no producto, y en un repo de portafolio solo hacen ruido.
+docs/superpowers/
