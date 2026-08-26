@@ -35,10 +35,16 @@ def _migrar(con: sqlite3.Connection) -> None:
     if "ultimo_uso" not in {
         f["name"] for f in con.execute("PRAGMA table_info(sesiones)")
     }:
+        # El DEFAULT tiene que ser constante: ALTER TABLE no acepta
+        # datetime('now'). Por eso las sesiones se insertan con su fecha
+        # explicita (ver auth._abrir_sesion) en vez de fiarse del default.
         con.execute(
             "ALTER TABLE sesiones ADD COLUMN ultimo_uso TEXT NOT NULL DEFAULT ''"
         )
         con.execute("UPDATE sesiones SET ultimo_uso=datetime('now')")
+    # Sesiones legitimas que nacieron con '' mientras el default mandaba: son
+    # de gente que entro de verdad, se les pone fecha en vez de echarla.
+    con.execute("UPDATE sesiones SET ultimo_uso=datetime('now') WHERE ultimo_uso=''")
     if "usuario_id" not in {
         f["name"] for f in con.execute("PRAGMA table_info(llm_calls)")
     }:

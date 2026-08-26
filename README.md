@@ -338,9 +338,10 @@ cp .env.example .env          # add your API key
 ```
 
 ```bash
-.venv/bin/pytest              # 168 tests, no network
-.venv/bin/pytest -m contrato  # opt-in: real provider calls
-node tests/xss_frontend.js    # XSS regression
+.venv/bin/pytest                  # 171 tests, no network
+.venv/bin/pytest -m contrato      # opt-in: real provider calls
+node tests/xss_frontend.js        # XSS regression
+node tests/delegacion_frontend.js # click delegation (the CSP kills inline onclick)
 ```
 
 ```bash

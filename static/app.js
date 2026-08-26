@@ -15,6 +15,49 @@ function esc(valor) {
     .split('"').join("&quot;")
     .split("'").join("&#39;");
 }
+/** Acciones de los botones que se pintan con innerHTML.
+ *
+ *  La CSP es `script-src 'self'` sin 'unsafe-inline', asi que el navegador
+ *  ignora TODO atributo onclick=: con ella puesta, cada boton pintado asi era
+ *  un boton muerto. En vez de abrir la CSP, el boton declara QUE hace
+ *  (`data-accion`) y un solo listener lo busca en esta tabla. El HTML nunca
+ *  lleva codigo, solo un nombre que tiene que estar aqui.
+ */
+const ACCIONES = {
+  perfil: () => vistaPerfil(),
+  salir: () => pedirSalir(),
+  alternar: () => alternarAcceso(),
+  temas: () => vistaTemas(),
+  nuevo: () => nuevoTema(),
+  tema: (id) => vistaTema(id),
+  borrar: (id) => pedirBorrar(id),
+  configurar: (id) => configurarExamen(id),
+  iniciar: (id) => iniciarExamen(id),
+};
+
+/** Atributos para un boton de la tabla de arriba. `arg` es siempre un id
+ *  nuestro, pero se escapa igual: es lo que acaba dentro de comillas. */
+function accion(nombre, arg) {
+  const dato = arg === undefined ? "" : ` data-arg="${esc(arg)}"`;
+  return `data-accion="${esc(nombre)}"${dato}`;
+}
+
+document.addEventListener("click", (evento) => {
+  // closest() sube hasta el PRIMER elemento con accion, asi que el aspa de
+  // borrar gana a la tarjeta que la contiene sin stopPropagation.
+  const boton = evento.target.closest && evento.target.closest("[data-accion]");
+  if (!boton) return;
+  const hacer = ACCIONES[boton.dataset.accion];
+  if (!hacer) return;
+  evento.preventDefault();
+  const arg = boton.dataset.arg;
+  // Las promesas que revientan ya pintan su propio error o son sesiones
+  // caducadas; lo que no puede pasar es un "unhandled rejection" mudo.
+  Promise.resolve(hacer(arg === undefined ? undefined : Number(arg))).catch(
+    () => {}
+  );
+});
+
 const app = () => $("#app");
 const NIVELES = [
   ["facil", "Fácil"],
@@ -132,10 +175,10 @@ const ICONO_SALIDA = `<svg viewBox="0 0 24 24" aria-hidden="true">
 
 function pintarSesion(usuario) {
   $("#sesion").innerHTML = usuario
-    ? `<button class="quien" onclick="vistaPerfil()" aria-label="Ajustes de perfil">
+    ? `<button class="quien" data-accion="perfil" aria-label="Ajustes de perfil">
          ${ICONO_PERSONA}<span>${esc(usuario)}</span>
        </button>
-       <button class="salir" onclick="pedirSalir()">
+       <button class="salir" data-accion="salir">
          ${ICONO_SALIDA}<span>Salir</span>
        </button>`
     : "";
@@ -178,7 +221,7 @@ function vistaEntrar(aviso = "") {
         <p class="error ${aviso ? "" : "oculto"}" id="aviso">${aviso}</p>
         <button type="submit" id="enviar">${verbo}</button>
       </form>
-      <button class="fantasma" onclick="alternarAcceso()">${
+      <button class="fantasma" data-accion="alternar">${
         registrando
           ? "Ya tengo cuenta"
           : "No tengo cuenta, quiero registrarme"
@@ -283,11 +326,12 @@ function confirmar(html, alSi, verbo = "Eliminar") {
   };
 }
 
-function fallo(mensaje, volver) {
+function fallo(mensaje, volver = "temas", arg) {
   // `mensaje` ya viene escapado por quien lo compone, porque a veces
-  // lleva <br> y <small> a proposito.
+  // lleva <br> y <small> a proposito. `volver` es el NOMBRE de una accion de
+  // la tabla, nunca codigo: la CSP no dejaria ejecutar codigo en un atributo.
   pintar(`<p class="error">${mensaje}</p>
-    <button class="secundario" onclick="${volver}">← Volver</button>`);
+    <button class="secundario" ${accion(volver, arg)}>← Volver</button>`);
 }
 
 /** El modelo alterna entre $...$ y \(...\) para las formulas. Hay que pasarlo
@@ -320,7 +364,7 @@ function vistaPerfil() {
   const actual = document.documentElement.getAttribute("data-tema") || "papel";
   const quien = $("#sesion .quien span");
   pintar(`
-    <button class="volver" onclick="vistaTemas()">\u2190 Temas</button>
+    <button class="volver" data-accion="temas">\u2190 Temas</button>
     <h1 class="titulo-pantalla">Tu perfil</h1>
 
     <form class="grupo" id="f-nombre">
@@ -434,7 +478,7 @@ async function vistaTemas() {
   location.hash = "";
   const temas = await api("/temas");
   pintar(`
-    <button class="nuevo" onclick="nuevoTema()">+ Nuevo tema</button>
+    <button class="nuevo" data-accion="nuevo">+ Nuevo tema</button>
     <input type="file" id="archivos" multiple accept="image/*,.pdf" hidden>
     ${
       temas.length === 0
@@ -442,7 +486,7 @@ async function vistaTemas() {
         : temas
             .map(
               (t) => `
-      <div class="tarjeta" data-id="${t.id}" onclick="vistaTema(${t.id})">
+      <div class="tarjeta" data-id="${t.id}" ${accion("tema", t.id)}>
         <div class="cuerpo">
           <h3>${esc(t.titulo)}</h3>
           <small>${t.n_fuentes} archivo${t.n_fuentes === 1 ? "" : "s"} · ${
@@ -450,7 +494,7 @@ async function vistaTemas() {
               }</small>
         </div>
         <button class="borrar" aria-label="Eliminar tema"
-          onclick="event.stopPropagation(); pedirBorrar(${t.id})">✕</button>
+          ${accion("borrar", t.id)}>✕</button>
       </div>`
             )
             .join("")
@@ -468,7 +512,6 @@ async function descartarTema(id, error) {
   fallo(
     `No se pudieron procesar tus apuntes, así que no se guardó el tema.
      Vuelve a intentarlo.<br><small>${esc(error)}</small>`,
-    "vistaTemas()"
   );
 }
 
@@ -484,7 +527,7 @@ function pedirBorrar(id) {
       try {
         await api(`/temas/${id}`, { method: "DELETE" });
       } catch (e) {
-        return fallo(esc(e.message), "vistaTemas()");
+        return fallo(esc(e.message));
       }
       vistaTemas();
     }
@@ -589,7 +632,7 @@ function nuevoTema() {
         (error) => descartarTema(tema_id, error)
       );
     } catch (e) {
-      fallo(esc(e.message), "vistaTemas()");
+      fallo(esc(e.message));
     }
   };
   input.click();
@@ -618,8 +661,7 @@ function seguirJob(jobId, tipo, titulo, alTerminar, alFallar) {
       if (++fallos > REINTENTOS) {
         return fallo(
           "Sin conexión con el servidor. El proceso sigue en marcha:" +
-            " vuelve a entrar al tema dentro de un momento.",
-          "vistaTemas()"
+            " vuelve a entrar al tema dentro de un momento."
         );
       }
       temporizador = setTimeout(tic, 5000);
@@ -634,8 +676,7 @@ function seguirJob(jobId, tipo, titulo, alTerminar, alFallar) {
       return alFallar
         ? alFallar(j.error)
         : fallo(
-            `No se pudo terminar.<br><small>${esc(j.error)}</small>`,
-            "vistaTemas()"
+            `No se pudo terminar.<br><small>${esc(j.error)}</small>`
           );
     }
     temporizador = setTimeout(tic, 2000);
@@ -671,7 +712,7 @@ async function vistaTema(id) {
       api(`/temas/${id}/job`),
     ]);
   } catch (e) {
-    return fallo(esc(e.message), "vistaTemas()");
+    return fallo(esc(e.message));
   }
 
   // Reenganche: si el tema sigue procesandose (recarga, pestana descartada,
@@ -690,7 +731,7 @@ async function vistaTema(id) {
 
   pintar(
     `
-    <button class="volver" onclick="vistaTemas()">← Temas</button>
+    <button class="volver" data-accion="temas">← Temas</button>
     <div id="resumen"></div>
     ${
       hist.length
@@ -705,7 +746,7 @@ async function vistaTema(id) {
         : ""
     }
     <div class="barra">
-      <button class="principal" onclick="configurarExamen(${id})">Tomar examen</button>
+      <button class="principal" ${accion("configurar", id)}>Tomar examen</button>
     </div>`,
     true
   );
@@ -745,7 +786,7 @@ function configurarExamen(temaId) {
 
   pintar(
     `
-    <button class="volver" onclick="vistaTema(${temaId})">← Volver</button>
+    <button class="volver" ${accion("tema", temaId)}>← Volver</button>
     <h1>Configurar examen</h1>
     <div class="grupo">
       <h2>Nivel de dificultad</h2>
@@ -760,7 +801,7 @@ function configurarExamen(temaId) {
     </div>
     <p class="aviso" id="aviso"></p>
     <div class="barra">
-      <button class="principal" onclick="iniciarExamen(${temaId})">Iniciar examen</button>
+      <button class="principal" ${accion("iniciar", temaId)}>Iniciar examen</button>
     </div>`,
     true
   );
@@ -793,7 +834,7 @@ async function iniciarExamen(temaId) {
   try {
     r = await api(`/temas/${temaId}/examenes`, peticion);
   } catch (e) {
-    return fallo(esc(e.message), `vistaTema(${temaId})`);
+    return fallo(esc(e.message), "tema", temaId);
   }
 
   if (r.examen_id) return vistaExamen(temaId, r);
@@ -808,7 +849,7 @@ async function iniciarExamen(temaId) {
       try {
         vistaExamen(temaId, await api(`/temas/${temaId}/examenes`, peticion));
       } catch (e) {
-        fallo(esc(e.message), `vistaTema(${temaId})`);
+        fallo(esc(e.message), "tema", temaId);
       }
     }
   );
@@ -856,7 +897,7 @@ function vistaExamen(temaId, ex) {
         body: JSON.stringify({ pregunta_id: p.id, elegida_idx: k }),
       });
     } catch (e) {
-      return fallo(esc(e.message), `vistaTema(${temaId})`);
+      return fallo(esc(e.message), "tema", temaId);
     }
     if (r.correcta) aciertos++;
 
@@ -892,8 +933,8 @@ function vistaExamen(temaId, ex) {
         <div class="de">${Math.round((r.aciertos / r.total) * 100)}% de aciertos</div>
       </div>
       <div class="apilados">
-        <button onclick="configurarExamen(${temaId})">Otro examen</button>
-        <button class="secundario" onclick="vistaTema(${temaId})">← Volver al tema</button>
+        <button ${accion("configurar", temaId)}>Otro examen</button>
+        <button class="secundario" ${accion("tema", temaId)}>← Volver al tema</button>
       </div>`);
     };
 

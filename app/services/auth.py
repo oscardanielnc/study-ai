@@ -85,8 +85,13 @@ def _abrir_sesion(con: sqlite3.Connection, usuario_id: int) -> str:
     poco en el movil es justo lo que hace que la gente deje de usar la app.
     Se puede revocar borrando la fila."""
     token = secrets.token_urlsafe(32)
+    # `ultimo_uso` se escribe aqui y no se deja al DEFAULT de la columna: en la
+    # base de produccion ese default es '' (el ALTER que la anadio no podia
+    # usar datetime('now')), y una sesion con '' nace ya caducada.
     con.execute(
-        "INSERT INTO sesiones (token, usuario_id) VALUES (?, ?)", (token, usuario_id)
+        "INSERT INTO sesiones (token, usuario_id, ultimo_uso)"
+        " VALUES (?, ?, datetime('now'))",
+        (token, usuario_id),
     )
     con.commit()
     return token

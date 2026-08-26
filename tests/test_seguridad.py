@@ -237,3 +237,69 @@ def test_usar_la_sesion_la_mantiene_viva(tmp_path, monkeypatch):
         "SELECT ultimo_uso >= datetime('now', '-1 day') AS fresco FROM sesiones"
     ).fetchone()
     assert reciente["fresco"] == 1
+
+
+def test_una_base_migrada_sigue_dando_sesiones_validas(tmp_path, monkeypatch):
+    """Produccion se rompio aqui. El ALTER que anadio `ultimo_uso` puso
+    DEFAULT '' (SQLite no acepta datetime('now') al anadir columna), y ese
+    default se quedo para SIEMPRE: cada sesion nueva nacia con ultimo_uso=''
+    y '' nunca es mayor que datetime('now', '-180 days'), asi que el token
+    recien emitido ya venia caducado y no se podia entrar."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    import sqlite3
+
+    from app.services.auth import entrar, registrar, usuario_de_token
+
+    # Base como la de produccion: creada ANTES de que existiera ultimo_uso.
+    ruta = str(tmp_path / "vieja.db")
+    vieja = sqlite3.connect(ruta)
+    vieja.executescript(
+        "CREATE TABLE usuarios (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " usuario TEXT NOT NULL UNIQUE COLLATE NOCASE, clave TEXT NOT NULL,"
+        " creado_en TEXT NOT NULL DEFAULT (datetime('now')));"
+        "CREATE TABLE sesiones (token TEXT PRIMARY KEY,"
+        " usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,"
+        " creado_en TEXT NOT NULL DEFAULT (datetime('now')));"
+    )
+    vieja.commit()
+    vieja.close()
+
+    con = conectar(ruta)
+    assert usuario_de_token(con, registrar(con, "oscar", "clave123")) is not None
+    assert usuario_de_token(con, entrar(con, "oscar", "clave123")) is not None
+
+
+def test_las_sesiones_ya_rotas_se_reparan_al_arrancar(tmp_path, monkeypatch):
+    """Quien entro con la version rota tiene filas con ultimo_uso=''. Son
+    sesiones legitimas: se les da fecha en vez de dejarlas muertas."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    from app.services.auth import registrar, usuario_de_token
+
+    ruta = str(tmp_path / "t.db")
+    con = conectar(ruta)
+    token = registrar(con, "oscar", "clave123")
+    con.execute("UPDATE sesiones SET ultimo_uso=''")
+    con.commit()
+    con.close()
+
+    assert usuario_de_token(conectar(ruta), token) is not None
+
+
+# ---------- F11: la CSP dejo muertos los onclick del frontend ----------
+
+
+def test_el_frontend_no_usa_manejadores_en_linea():
+    """`script-src 'self'` sin 'unsafe-inline' bloquea TODO atributo on*= .
+    Con la CSP puesta, cada `onclick="..."` del HTML es un boton que no hace
+    nada: asi murio "+ Nuevo tema". Los eventos se enganchan desde JS."""
+    import re
+    from pathlib import Path
+
+    raiz = Path(__file__).parent.parent / "static"
+    for archivo in ("app.js", "index.html"):
+        texto = (raiz / archivo).read_text(encoding="utf-8")
+        # Atributo HTML dentro de una cadena; no `elemento.onclick = fn`, que
+        # es una propiedad de JS y la CSP no toca.
+        assert not re.findall(r'\son[a-z]+\s*=\s*"', texto), (
+            f"{archivo} tiene manejadores en linea; la CSP los bloquea"
+        )
